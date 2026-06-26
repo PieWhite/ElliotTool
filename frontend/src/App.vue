@@ -33,7 +33,7 @@
       
       <!-- Control Panel -->
       <section class="bg-[#090d16]/90 border border-gray-800/80 rounded-xl p-5 shadow-xl fade-in">
-        <form @submit.prevent="fetchMarketData" class="grid grid-cols-1 md:grid-cols-4 gap-5 items-end">
+        <form @submit.prevent="fetchMarketData" class="grid grid-cols-1 md:grid-cols-5 gap-5 items-end">
           
           <!-- Ticker Search -->
           <div class="flex flex-col gap-2">
@@ -99,6 +99,57 @@
             </div>
           </div>
 
+          <!-- Scenario Toggle (Step 10) -->
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              Scenario View
+            </label>
+            <div class="flex gap-2">
+              <!-- Bullish Button -->
+              <button
+                id="scenario-bullish-btn"
+                type="button"
+                @click="setScenario('primary')"
+                class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-2 rounded-lg border text-xs font-bold transition-all"
+                :class="activeScenarioBias === 'primary'
+                  ? 'bg-green-500/15 border-green-500 text-green-400 shadow-lg shadow-green-500/10'
+                  : 'bg-transparent border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'"
+                :disabled="!scenarios || loading"
+              >
+                <span class="text-[11px]">▲ BULLISH</span>
+                <span
+                  v-if="scenarios"
+                  class="text-[9px] font-medium opacity-80"
+                  :class="activeScenarioBias === 'primary' ? 'text-green-300' : 'text-gray-600'"
+                >
+                  {{ (scenarios.primary.confidence * 100).toFixed(0) }}% conf
+                </span>
+                <span v-else class="text-[9px] text-gray-700">—</span>
+              </button>
+              <!-- Bearish Button -->
+              <button
+                id="scenario-bearish-btn"
+                type="button"
+                @click="setScenario('alternate')"
+                class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-2 rounded-lg border text-xs font-bold transition-all"
+                :class="activeScenarioBias === 'alternate'
+                  ? 'bg-red-500/15 border-red-500 text-red-400 shadow-lg shadow-red-500/10'
+                  : 'bg-transparent border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'"
+                :disabled="!scenarios || loading"
+              >
+                <span class="text-[11px]">▼ BEARISH</span>
+                <span
+                  v-if="scenarios"
+                  class="text-[9px] font-medium opacity-80"
+                  :class="activeScenarioBias === 'alternate' ? 'text-red-300' : 'text-gray-600'"
+                >
+                  {{ (scenarios.alternate.confidence * 100).toFixed(0) }}% conf
+                </span>
+                <span v-else class="text-[9px] text-gray-700">—</span>
+              </button>
+            </div>
+          </div>
+
           <!-- Fetch Action -->
           <div>
             <button
@@ -154,6 +205,8 @@
             :candles="candles"
             :motiveWaves="motiveWaves"
             :correctiveWaves="correctiveWaves"
+            :incompleteWaves="incompleteWaves"
+            :activeScenario="activeScenario"
             class="fade-in"
           />
 
@@ -280,6 +333,11 @@ const {
   candles,
   motiveWaves,
   correctiveWaves,
+  incompleteWaves,
+  scenarios,
+  activeScenario,
+  activeScenarioBias,
+  setScenario,
   loading,
   error,
   fetchMarketData,

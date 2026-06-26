@@ -1,8 +1,9 @@
 package model
 
-// CorrectiveWave represents a validated 3-wave Elliott Wave corrective structure (ABC).
-// It stores pointers to the 4 core pivots that form the corrective wave,
-// along with the type (ZIGZAG or FLAT) and direction (BULLISH or BEARISH).
+// CorrectiveWave represents a validated Elliott Wave corrective structure.
+// Standard ABC structures (ZIGZAG, FLAT) use Start, WA, WB, WC.
+// Triangles (TRIANGLE) additionally populate WD and WE.
+// Double Threes (WXY) additionally populate WX as the connecting X-wave pivot.
 //
 //easyjson:json
 type CorrectiveWave struct {
@@ -10,6 +11,9 @@ type CorrectiveWave struct {
 	WA        *Pivot `json:"wa"`
 	WB        *Pivot `json:"wb"`
 	WC        *Pivot `json:"wc"`
-	Type      string `json:"type"`      // "ZIGZAG" or "FLAT"
-	Direction string `json:"direction"` // "BULLISH" or "BEARISH"
+	WD        *Pivot `json:"wd,omitempty"` // Triangle leg D (pivot 4 of ABCDE)
+	WE        *Pivot `json:"we,omitempty"` // Triangle leg E (pivot 5 of ABCDE)
+	WX        *Pivot `json:"wx,omitempty"` // WXY Double Three: X-wave connector pivot
+	Type      string `json:"type"`         // "ZIGZAG", "FLAT", "TRIANGLE", or "WXY"
+	Direction string `json:"direction"`    // "BULLISH" or "BEARISH"
 }

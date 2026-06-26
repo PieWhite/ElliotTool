@@ -29,16 +29,24 @@
 - **Truncations:** Allow Wave 5 to terminate below the peak of Wave 3, provided the sub-waves and Fibonacci extensions of Wave 3 mathematically justify exhaustion.
 - **Incomplete Motives (1-2-3):** Identify developing impulse structures (waves 1, 2, and 3 completed) and project the predictive path for waves 4 and 5.
 
-### [ ] Step 9: Advanced Corrective Structures (Triangles & Complex Threes)
+### [x] Step 9: Advanced Corrective Structures (Triangles & Complex Threes)
 - **Objective:** Expand `CorrectiveWave` beyond standard ZigZags and Flats.
-- **Triangles (ABCDE):** Implement a 5-pivot sideways scanner with contracting/expanding bounds.
-- **Complex Corrections (WXY / WXYZ):** Build logic to detect "Double Threes" and "Triple Threes" linked by an "X" wave, as defined by Frost & Prechter.
+- **Triangles (ABCDE):** Implemented a 5-pivot sideways scanner (`evaluateTriangle`) with strict contracting bounds (|A|>|B|>|C|>|D|>|E|). Both BULLISH (Low start) and BEARISH (High start) variants supported. `WD`/`WE` pivot fields added to model.
+- **Complex Corrections (WXY):** Implemented `evaluateWXY` to detect Double Threes via an 8-pivot window. Validates W-wave (ZigZag/Flat), X-wave retracement ≤ 90%, Y-wave (ZigZag/Flat), and net directional continuation. `WX` pivot field added to model.
+- **Domain Model:** `CorrectiveWave` extended with `WD *Pivot`, `WE *Pivot`, `WX *Pivot` (all `omitempty`). `type` field now documents `"TRIANGLE"` and `"WXY"`.
+- **easyjson:** Regenerated `corrective_wave_easyjson.go` after model changes.
+- **TDD:** 9 new table-driven tests (4 Triangle, 4 WXY, 1 edge case). All 30 tests pass. Benchmarks show ≤4 allocations per call (pre-allocated result slice only; scanning loops are zero-allocation).
+- **Frontend Sync (Step 8 backfill):** `MotiveWave` TS interface gains `is_diagonal`/`is_truncated`. `IncompleteWave` interface added with `target_box`. `AnalysisResponse` gains `incomplete_waves`. `ChartWidget.vue` renders diagonals as dashed, truncated W5 as `"5T"`, incomplete waves as cyan dotted lines with teal target boxes, Triangles in teal, WXY in indigo. `BoxPrimitive` extended with optional fill/stroke color params.
 
-### [ ] Step 10: The Probabilistic Engine (Primary vs. Alternate Counts)
+### [x] Step 10: The Probabilistic Engine (Primary vs. Alternate Counts)
 - **Objective:** Transition from returning a single "truth" to returning an array of viable scenarios.
-- **Scoring Weight Adjustment:** Upgrade `ConfidenceScore` to weigh strict Fibonacci ratio compliance heavily.
-- **Scenario Bundling:** Output a `Primary Count` (highest score) and an `Alternate Count` (second-highest score or inverse directional bias).
-- **Frontend Toggle:** Implement UI controls allowing the user to switch the canvas between the Bullish Scenario and the Bearish Scenario.
+- **Model (`pkg/model/response.go`):** Added `WaveStructure` (type, pivots, purple_boxes, confidence_score), `AnalysisScenario` (bias, confidence, structures), and `ScenarioPair` (primary, alternate). `AnalysisResponse` gains `Scenarios *ScenarioPair`. Legacy flat arrays kept with `omitempty`. All new structs annotated `//easyjson:json`; `response_easyjson.go` regenerated.
+- **Scorer (`pkg/elliott/scorer.go`):** `ScenarioBundle` function delegates to `MatchMotiveWaves`, `MatchCorrectiveWaves`, and `MatchIncompleteWaves` without re-implementing scanning logic. Converts results to `WaveStructure`, sorts by confidence descending, and emits primary (highest-confidence) + alternate (second-highest, or inverse-bias placeholder with confidence 0.0 when only 1 structure found).
+- **API (`pkg/api/api.go`):** Wired `ScenarioBundle` into `handleAnalyze`; response carries both `scenarios` object and legacy flat arrays simultaneously.
+- **TDD (`pkg/elliott/scorer_test.go`):** 4 table-driven tests: two-wave ordering, single-wave inverse fallback, confidence-ordering invariant (primary ≥ alternate), empty-input edge case. All 34 tests pass.
+- **Frontend Interfaces (`useMarketData.ts`):** Added `WaveStructure`, `AnalysisScenario` TypeScript interfaces. `AnalysisResponse` gains `scenarios`. Composable exposes `scenarios` shallowRef, `activeScenario` computed, `activeScenarioBias` ref, and `setScenario` helper.
+- **UI Toggle (`App.vue`):** Added a 5-column grid with a **Scenario View** toggle column containing ▲ BULLISH / ▼ BEARISH buttons. Active BULLISH = green border/bg, active BEARISH = red border/bg. Confidence badge shows % for each scenario dynamically.
+- **Chart Rendering (`ChartWidget.vue`):** Accepts optional `activeScenario?: AnalysisScenario` prop. When provided, `renderScenarioStructures` renders each `WaveStructure`'s pivot sequence as a colour-coded line (motive = green/red solid, corrective = amber/teal/indigo dashed, incomplete = cyan dotted) and attaches `purple_boxes`. Falls back to legacy flat array rendering when no scenario is active. Watch list includes `activeScenario` so toggling immediately redraws.
 
 ### [ ] Step 11: Comprehensive Purple Box Matrix (Target Zones)
 - **Objective:** Calculate dynamic Purple Boxes for *every* developing wave based on the uploaded `WaveRatios.pdf`.

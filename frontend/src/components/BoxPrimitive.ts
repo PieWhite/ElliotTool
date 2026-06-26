@@ -11,12 +11,23 @@ class BoxRenderer implements IPrimitivePaneRenderer {
   private _x2: number | null;
   private _y1: number | null;
   private _y2: number | null;
+  private _fillColor: string;
+  private _strokeColor: string;
 
-  constructor(x1: number | null, x2: number | null, y1: number | null, y2: number | null) {
+  constructor(
+    x1: number | null,
+    x2: number | null,
+    y1: number | null,
+    y2: number | null,
+    fillColor: string,
+    strokeColor: string,
+  ) {
     this._x1 = x1;
     this._x2 = x2;
     this._y1 = y1;
     this._y2 = y2;
+    this._fillColor = fillColor;
+    this._strokeColor = strokeColor;
   }
 
   draw(target: any) {
@@ -44,14 +55,12 @@ class BoxRenderer implements IPrimitivePaneRenderer {
 
       ctx.rect(x, y, width, height);
 
-      // Semi-transparent purple fill
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.15)'; 
+      ctx.fillStyle = this._fillColor;
       ctx.fill();
 
-      // Sleek solid purple border
-      ctx.strokeStyle = 'rgba(168, 85, 247, 0.7)'; 
+      ctx.strokeStyle = this._strokeColor;
       ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]); // Dashed border for high premium visual look
+      ctx.setLineDash([4, 4]); // Dashed border for premium visual look
       ctx.stroke();
       ctx.setLineDash([]); // Reset line dash
     });
@@ -79,12 +88,24 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
   private _endTime: number;
   private _minPrice: number;
   private _maxPrice: number;
+  // Theming: defaults to purple for motive wave target boxes.
+  private _fillColor: string;
+  private _strokeColor: string;
 
-  constructor(startTime: number, endTime: number, minPrice: number, maxPrice: number) {
+  constructor(
+    startTime: number,
+    endTime: number,
+    minPrice: number,
+    maxPrice: number,
+    fillColor = 'rgba(147, 51, 234, 0.15)',
+    strokeColor = 'rgba(168, 85, 247, 0.70)',
+  ) {
     this._startTime = startTime;
     this._endTime = endTime;
     this._minPrice = minPrice;
     this._maxPrice = maxPrice;
+    this._fillColor = fillColor;
+    this._strokeColor = strokeColor;
     this._paneViews = [new BoxPaneView(this)];
   }
 
@@ -104,7 +125,7 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
 
   getRenderer(): IPrimitivePaneRenderer {
     if (!this._chart || !this._series) {
-      return new BoxRenderer(null, null, null, null);
+      return new BoxRenderer(null, null, null, null, this._fillColor, this._strokeColor);
     }
 
     const timeScale = this._chart.timeScale();
@@ -113,7 +134,7 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
     const y1 = this._series.priceToCoordinate(this._minPrice);
     const y2 = this._series.priceToCoordinate(this._maxPrice);
 
-    return new BoxRenderer(x1, x2, y1, y2);
+    return new BoxRenderer(x1, x2, y1, y2, this._fillColor, this._strokeColor);
   }
 
   updateAllViews() {}

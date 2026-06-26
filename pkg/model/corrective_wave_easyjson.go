@@ -39,7 +39,11 @@ func easyjsonB04a0c2DecodeWaveSightPkgModel(in *jlexer.Lexer, out *CorrectiveWav
 				if out.Start == nil {
 					out.Start = new(Pivot)
 				}
-				easyjsonB04a0c2DecodeWaveSightPkgModel1(in, out.Start)
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.Start).UnmarshalEasyJSON(in)
+				}
 			}
 		case "wa":
 			if in.IsNull() {
@@ -49,7 +53,11 @@ func easyjsonB04a0c2DecodeWaveSightPkgModel(in *jlexer.Lexer, out *CorrectiveWav
 				if out.WA == nil {
 					out.WA = new(Pivot)
 				}
-				easyjsonB04a0c2DecodeWaveSightPkgModel1(in, out.WA)
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.WA).UnmarshalEasyJSON(in)
+				}
 			}
 		case "wb":
 			if in.IsNull() {
@@ -59,7 +67,11 @@ func easyjsonB04a0c2DecodeWaveSightPkgModel(in *jlexer.Lexer, out *CorrectiveWav
 				if out.WB == nil {
 					out.WB = new(Pivot)
 				}
-				easyjsonB04a0c2DecodeWaveSightPkgModel1(in, out.WB)
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.WB).UnmarshalEasyJSON(in)
+				}
 			}
 		case "wc":
 			if in.IsNull() {
@@ -69,7 +81,53 @@ func easyjsonB04a0c2DecodeWaveSightPkgModel(in *jlexer.Lexer, out *CorrectiveWav
 				if out.WC == nil {
 					out.WC = new(Pivot)
 				}
-				easyjsonB04a0c2DecodeWaveSightPkgModel1(in, out.WC)
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.WC).UnmarshalEasyJSON(in)
+				}
+			}
+		case "wd":
+			if in.IsNull() {
+				in.Skip()
+				out.WD = nil
+			} else {
+				if out.WD == nil {
+					out.WD = new(Pivot)
+				}
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.WD).UnmarshalEasyJSON(in)
+				}
+			}
+		case "we":
+			if in.IsNull() {
+				in.Skip()
+				out.WE = nil
+			} else {
+				if out.WE == nil {
+					out.WE = new(Pivot)
+				}
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.WE).UnmarshalEasyJSON(in)
+				}
+			}
+		case "wx":
+			if in.IsNull() {
+				in.Skip()
+				out.WX = nil
+			} else {
+				if out.WX == nil {
+					out.WX = new(Pivot)
+				}
+				if in.IsNull() {
+					in.Skip()
+				} else {
+					(*out.WX).UnmarshalEasyJSON(in)
+				}
 			}
 		case "type":
 			if in.IsNull() {
@@ -103,7 +161,7 @@ func easyjsonB04a0c2EncodeWaveSightPkgModel(out *jwriter.Writer, in CorrectiveWa
 		if in.Start == nil {
 			out.RawString("null")
 		} else {
-			easyjsonB04a0c2EncodeWaveSightPkgModel1(out, *in.Start)
+			(*in.Start).MarshalEasyJSON(out)
 		}
 	}
 	{
@@ -112,7 +170,7 @@ func easyjsonB04a0c2EncodeWaveSightPkgModel(out *jwriter.Writer, in CorrectiveWa
 		if in.WA == nil {
 			out.RawString("null")
 		} else {
-			easyjsonB04a0c2EncodeWaveSightPkgModel1(out, *in.WA)
+			(*in.WA).MarshalEasyJSON(out)
 		}
 	}
 	{
@@ -121,7 +179,7 @@ func easyjsonB04a0c2EncodeWaveSightPkgModel(out *jwriter.Writer, in CorrectiveWa
 		if in.WB == nil {
 			out.RawString("null")
 		} else {
-			easyjsonB04a0c2EncodeWaveSightPkgModel1(out, *in.WB)
+			(*in.WB).MarshalEasyJSON(out)
 		}
 	}
 	{
@@ -130,8 +188,23 @@ func easyjsonB04a0c2EncodeWaveSightPkgModel(out *jwriter.Writer, in CorrectiveWa
 		if in.WC == nil {
 			out.RawString("null")
 		} else {
-			easyjsonB04a0c2EncodeWaveSightPkgModel1(out, *in.WC)
+			(*in.WC).MarshalEasyJSON(out)
 		}
+	}
+	if in.WD != nil {
+		const prefix string = ",\"wd\":"
+		out.RawString(prefix)
+		(*in.WD).MarshalEasyJSON(out)
+	}
+	if in.WE != nil {
+		const prefix string = ",\"we\":"
+		out.RawString(prefix)
+		(*in.WE).MarshalEasyJSON(out)
+	}
+	if in.WX != nil {
+		const prefix string = ",\"wx\":"
+		out.RawString(prefix)
+		(*in.WX).MarshalEasyJSON(out)
 	}
 	{
 		const prefix string = ",\"type\":"
@@ -168,67 +241,4 @@ func (v *CorrectiveWave) UnmarshalJSON(data []byte) error {
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *CorrectiveWave) UnmarshalEasyJSON(l *jlexer.Lexer) {
 	easyjsonB04a0c2DecodeWaveSightPkgModel(l, v)
-}
-func easyjsonB04a0c2DecodeWaveSightPkgModel1(in *jlexer.Lexer, out *Pivot) {
-	isTopLevel := in.IsStart()
-	if in.IsNull() {
-		if isTopLevel {
-			in.Consumed()
-		}
-		in.Skip()
-		return
-	}
-	in.Delim('{')
-	for !in.IsDelim('}') {
-		key := in.UnsafeFieldName(false)
-		in.WantColon()
-		switch key {
-		case "time":
-			if in.IsNull() {
-				in.Skip()
-			} else {
-				out.Time = int64(in.Int64())
-			}
-		case "price":
-			if in.IsNull() {
-				in.Skip()
-			} else {
-				out.Price = float64(in.Float64())
-			}
-		case "type":
-			if in.IsNull() {
-				in.Skip()
-			} else {
-				out.Type = PivotType(in.String())
-			}
-		default:
-			in.SkipRecursive()
-		}
-		in.WantComma()
-	}
-	in.Delim('}')
-	if isTopLevel {
-		in.Consumed()
-	}
-}
-func easyjsonB04a0c2EncodeWaveSightPkgModel1(out *jwriter.Writer, in Pivot) {
-	out.RawByte('{')
-	first := true
-	_ = first
-	{
-		const prefix string = ",\"time\":"
-		out.RawString(prefix[1:])
-		out.Int64(int64(in.Time))
-	}
-	{
-		const prefix string = ",\"price\":"
-		out.RawString(prefix)
-		out.Float64(float64(in.Price))
-	}
-	{
-		const prefix string = ",\"type\":"
-		out.RawString(prefix)
-		out.String(string(in.Type))
-	}
-	out.RawByte('}')
 }

@@ -1,4 +1,4 @@
-import { ref, shallowRef } from 'vue';
+import { ref, shallowRef, computed } from 'vue';
 
 export interface Candle {
   time: number; // Unix timestamp in seconds
@@ -32,6 +32,8 @@ export interface MotiveWave {
   direction: 'BULLISH' | 'BEARISH';
   confidence_score: number;
   purple_box?: TargetBox;
+  is_diagonal: boolean;   // Step 8: true if wave is a converging diagonal (wedge)
+  is_truncated: boolean;  // Step 8: true if Wave 5 fails to exceed Wave 3
 }
 
 export interface CorrectiveWave {
@@ -39,16 +41,52 @@ export interface CorrectiveWave {
   wa: Pivot;
   wb: Pivot;
   wc: Pivot;
-  type: 'ZIGZAG' | 'FLAT';
+  wd?: Pivot;  // Triangle D-pivot or WXY Y-wave A-pivot
+  we?: Pivot;  // Triangle E-pivot or WXY Y-wave C terminal pivot
+  wx?: Pivot;  // WXY X-wave connector pivot
+  type: 'ZIGZAG' | 'FLAT' | 'TRIANGLE' | 'WXY';
   direction: 'BULLISH' | 'BEARISH';
+}
+
+// Step 8: Incomplete (developing) 1-2-3 structure with a predictive Wave 4 target box.
+export interface IncompleteWave {
+  start: Pivot;
+  w1: Pivot;
+  w2: Pivot;
+  w3: Pivot;
+  direction: 'BULLISH' | 'BEARISH';
+  confidence_score: number;
+  target_box?: TargetBox;
+}
+
+// Step 10: Generic wave structure used inside a scenario (type-agnostic for frontend rendering).
+export interface WaveStructure {
+  type: string;                // e.g. "MOTIVE_IMPULSE", "CORRECTIVE_ZIGZAG", "INCOMPLETE_123"
+  pivots: Pivot[];
+  purple_boxes?: TargetBox[];
+  confidence_score: number;
+}
+
+// Step 10: A directional scenario (Primary or Alternate) containing all supporting structures.
+export interface AnalysisScenario {
+  bias: 'BULLISH' | 'BEARISH';
+  confidence: number;
+  structures: WaveStructure[];
 }
 
 export interface AnalysisResponse {
   ticker: string;
   timeframe: string;
   candles: Candle[];
+  // Step 10: Probabilistic scenario pair
+  scenarios?: {
+    primary: AnalysisScenario;
+    alternate: AnalysisScenario;
+  };
+  // Legacy flat arrays (backward compat)
   motive_waves: MotiveWave[];
   corrective_waves: CorrectiveWave[];
+  incomplete_waves: IncompleteWave[]; // Step 8: developing 1-2-3 structures
 }
 
 export function useMarketData() {
@@ -61,6 +99,24 @@ export function useMarketData() {
   const candles = shallowRef<Candle[]>([]);
   const motiveWaves = shallowRef<MotiveWave[]>([]);
   const correctiveWaves = shallowRef<CorrectiveWave[]>([]);
+  const incompleteWaves = shallowRef<IncompleteWave[]>([]);
+
+  // Step 10: Scenario pair and active scenario toggle
+  const scenarios = shallowRef<AnalysisResponse['scenarios']>(undefined);
+  // 'primary' | 'alternate' — controls which scenario the chart renders
+  const activeScenarioBias = ref<'primary' | 'alternate'>('primary');
+
+  // Derived active scenario (reactive to bias toggle + scenarios update)
+  const activeScenario = computed<AnalysisScenario | undefined>(() => {
+    if (!scenarios.value) return undefined;
+    return activeScenarioBias.value === 'primary'
+      ? scenarios.value.primary
+      : scenarios.value.alternate;
+  });
+
+  const setScenario = (bias: 'primary' | 'alternate') => {
+    activeScenarioBias.value = bias;
+  };
 
   // Loading and error states
   const loading = ref<boolean>(false);
@@ -103,6 +159,11 @@ export function useMarketData() {
       candles.value = sortedCandles;
       motiveWaves.value = data.motive_waves || [];
       correctiveWaves.value = data.corrective_waves || [];
+      incompleteWaves.value = data.incomplete_waves || [];
+      scenarios.value = data.scenarios;
+
+      // Default the toggle to primary on every fresh fetch
+      activeScenarioBias.value = 'primary';
     } catch (err: any) {
       console.error('Error fetching market analysis:', err);
       error.value = err.message || 'An unexpected error occurred while fetching analysis data.';
@@ -110,6 +171,8 @@ export function useMarketData() {
       candles.value = [];
       motiveWaves.value = [];
       correctiveWaves.value = [];
+      incompleteWaves.value = [];
+      scenarios.value = undefined;
     } finally {
       loading.value = false;
     }
@@ -122,6 +185,11 @@ export function useMarketData() {
     candles,
     motiveWaves,
     correctiveWaves,
+    incompleteWaves,
+    scenarios,
+    activeScenario,
+    activeScenarioBias,
+    setScenario,
     loading,
     error,
     fetchMarketData,

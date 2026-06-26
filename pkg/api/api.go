@@ -127,15 +127,17 @@ func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	// Run calculations and scanning pipeline
 	pivots := zigzag.CalculateZigZag(candles, percentDeviation)
-	motiveWaves := elliott.MatchMotiveWaves(pivots)
-	correctiveWaves := elliott.MatchCorrectiveWaves(pivots)
-	incompleteWaves := elliott.MatchIncompleteWaves(pivots)
+
+	// ScenarioBundle ranks all patterns into a primary/alternate pair while also
+	// returning the legacy flat slices for backward compatibility.
+	motiveWaves, correctiveWaves, incompleteWaves, scenarios := elliott.ScenarioBundle(pivots)
 
 	// Compile high-performance Response struct
 	resp := model.AnalysisResponse{
 		Ticker:          ticker,
 		Timeframe:       timeframe,
 		Candles:         candles,
+		Scenarios:       scenarios,
 		MotiveWaves:     motiveWaves,
 		CorrectiveWaves: correctiveWaves,
 		IncompleteWaves: incompleteWaves,

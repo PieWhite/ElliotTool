@@ -585,3 +585,255 @@ func BenchmarkMatchIncompleteWaves(b *testing.B) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Step 9: Triangle & WXY Double Three Tests
+// ---------------------------------------------------------------------------
+
+func TestMatchTriangles(t *testing.T) {
+	tests := []struct {
+		name          string
+		pivots        []model.Pivot
+		wantTriangles int
+		verify        func(t *testing.T, results []model.CorrectiveWave)
+	}{
+		{
+			name:          "Insufficient pivots (fewer than 6)",
+			pivots:        []model.Pivot{{Time: 100, Price: 100.0, Type: model.PivotLow}},
+			wantTriangles: 0,
+		},
+		{
+			// A valid bearish contracting triangle:
+			// Start (High) → A (Low) → B (High) → C (Low) → D (High) → E (Low)
+			// Each leg: 50 > 40 > 30 > 20 > 10 ✓
+			name: "Valid Bearish Contracting Triangle (ABCDE)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 200.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 150.0, Type: model.PivotLow},  // A (leg = 50)
+				{Time: 120, Price: 190.0, Type: model.PivotHigh}, // B (leg = 40)
+				{Time: 130, Price: 160.0, Type: model.PivotLow},  // C (leg = 30)
+				{Time: 140, Price: 180.0, Type: model.PivotHigh}, // D (leg = 20)
+				{Time: 150, Price: 170.0, Type: model.PivotLow},  // E (leg = 10)
+			},
+			wantTriangles: 1,
+			verify: func(t *testing.T, results []model.CorrectiveWave) {
+				tri := results[0]
+				if tri.Type != "TRIANGLE" {
+					t.Errorf("expected type TRIANGLE, got %q", tri.Type)
+				}
+				if tri.Direction != "BEARISH" {
+					t.Errorf("expected direction BEARISH, got %q", tri.Direction)
+				}
+				if tri.Start.Price != 200.0 {
+					t.Errorf("expected Start.Price 200.0, got %f", tri.Start.Price)
+				}
+				if tri.WD == nil || tri.WD.Price != 180.0 {
+					t.Errorf("expected WD (D-pivot) Price 180.0, got %v", tri.WD)
+				}
+				if tri.WE == nil || tri.WE.Price != 170.0 {
+					t.Errorf("expected WE (E-pivot) Price 170.0, got %v", tri.WE)
+				}
+			},
+		},
+		{
+			// A valid bullish contracting triangle:
+			// Start (Low) → A (High) → B (Low) → C (High) → D (Low) → E (High)
+			// Each leg: 60 > 40 > 25 > 15 > 8 ✓
+			name: "Valid Bullish Contracting Triangle (ABCDE)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 160.0, Type: model.PivotHigh}, // A (leg = 60)
+				{Time: 120, Price: 120.0, Type: model.PivotLow},  // B (leg = 40)
+				{Time: 130, Price: 145.0, Type: model.PivotHigh}, // C (leg = 25)
+				{Time: 140, Price: 130.0, Type: model.PivotLow},  // D (leg = 15)
+				{Time: 150, Price: 138.0, Type: model.PivotHigh}, // E (leg = 8)
+			},
+			wantTriangles: 1,
+			verify: func(t *testing.T, results []model.CorrectiveWave) {
+				tri := results[0]
+				if tri.Type != "TRIANGLE" {
+					t.Errorf("expected type TRIANGLE, got %q", tri.Type)
+				}
+				if tri.Direction != "BULLISH" {
+					t.Errorf("expected direction BULLISH, got %q", tri.Direction)
+				}
+			},
+		},
+		{
+			// An expanding (invalid) triangle where leg B > leg A.
+			// Start (High) → A → B(long) → C → D → E
+			name: "Invalid Expanding Triangle (leg B > leg A — rejected)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 200.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 170.0, Type: model.PivotLow},  // A (leg = 30)
+				{Time: 120, Price: 210.0, Type: model.PivotHigh}, // B (leg = 40 — LONGER than A)
+				{Time: 130, Price: 175.0, Type: model.PivotLow},  // C (leg = 35)
+				{Time: 140, Price: 195.0, Type: model.PivotHigh}, // D (leg = 20)
+				{Time: 150, Price: 180.0, Type: model.PivotLow},  // E (leg = 15)
+			},
+			wantTriangles: 0,
+		},
+		{
+			// Triangle where leg C = leg D (not strictly contracting) — rejected.
+			name: "Invalid Triangle (leg C equals leg D — not strictly contracting)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 200.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 150.0, Type: model.PivotLow},  // A (leg = 50)
+				{Time: 120, Price: 190.0, Type: model.PivotHigh}, // B (leg = 40)
+				{Time: 130, Price: 160.0, Type: model.PivotLow},  // C (leg = 30)
+				{Time: 140, Price: 190.0, Type: model.PivotHigh}, // D (leg = 30 — equal to C)
+				{Time: 150, Price: 175.0, Type: model.PivotLow},  // E (leg = 15)
+			},
+			wantTriangles: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := elliott.MatchCorrectiveWaves(tt.pivots)
+			// Filter only TRIANGLE results for assertion.
+			var triangles []model.CorrectiveWave
+			for _, r := range results {
+				if r.Type == "TRIANGLE" {
+					triangles = append(triangles, r)
+				}
+			}
+			if len(triangles) != tt.wantTriangles {
+				t.Fatalf("expected %d TRIANGLE(s), got %d (all results: %d)", tt.wantTriangles, len(triangles), len(results))
+			}
+			if tt.verify != nil {
+				tt.verify(t, triangles)
+			}
+		})
+	}
+}
+
+func TestMatchWXYDoubleThree(t *testing.T) {
+	tests := []struct {
+		name     string
+		pivots   []model.Pivot
+		wantWXY  int
+		verify   func(t *testing.T, results []model.CorrectiveWave)
+	}{
+		{
+			name:    "Insufficient pivots (fewer than 8)",
+			pivots:  []model.Pivot{{Time: 100, Price: 100.0, Type: model.PivotLow}},
+			wantWXY: 0,
+		},
+		{
+			// Valid Bearish WXY Double Three:
+			// W = ZigZag: High(200) → Low(150) → High(170) → Low(100)
+			//   WA=50, WB=20 (40% of A = ZigZag OK), WC=70 (140% of WA = ZigZag OK)
+			// X = bounce from p3(Low=100) → p4(High=140): retraces 40/100 = 40% < 90% ✓
+			// Y = ZigZag: High(140) → Low(80) → High(110) → Low(50)
+			//   YA=60, YB=30 (50% of YA = ZigZag), YC=60 (100% of YA = ZigZag)
+			// Y-end (50) < W-end (100) ✓
+			name: "Valid Bearish WXY Double Three",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 200.0, Type: model.PivotHigh}, // p0: Start (W-start)
+				{Time: 110, Price: 150.0, Type: model.PivotLow},  // p1: W-A (leg 50)
+				{Time: 120, Price: 170.0, Type: model.PivotHigh}, // p2: W-B (retrace 40%=20/50, zigzag)
+				{Time: 130, Price: 100.0, Type: model.PivotLow},  // p3: W-C (leg 70, 140% of WA)
+				{Time: 140, Price: 140.0, Type: model.PivotHigh}, // p4: X (bounce 40/100=40% < 90%)
+				{Time: 150, Price: 80.0, Type: model.PivotLow},   // p5: Y-A (leg 60)
+				{Time: 160, Price: 110.0, Type: model.PivotHigh}, // p6: Y-B (retrace 50% = 30/60)
+				{Time: 170, Price: 50.0, Type: model.PivotLow},   // p7: Y-C (leg 60, 100% of YA)
+			},
+			wantWXY: 1,
+			verify: func(t *testing.T, results []model.CorrectiveWave) {
+				wxy := results[0]
+				if wxy.Type != "WXY" {
+					t.Errorf("expected type WXY, got %q", wxy.Type)
+				}
+				if wxy.Direction != "BEARISH" {
+					t.Errorf("expected direction BEARISH, got %q", wxy.Direction)
+				}
+				if wxy.WX == nil || wxy.WX.Price != 140.0 {
+					t.Errorf("expected WX Price 140.0, got %v", wxy.WX)
+				}
+				if wxy.WE == nil || wxy.WE.Price != 50.0 {
+					t.Errorf("expected WE (Y-C terminal) Price 50.0, got %v", wxy.WE)
+				}
+			},
+		},
+		{
+			// Invalid: X wave retraces 95% of W (> 90%), must be rejected.
+			// W: High(200) → Low(100) → High(150) → Low(80): WA=100, WB=50 (50% zig), WC=70 (70%<98%)
+			// Actually need WC ≥ 100%-2% of WA to pass ZigZag (ratioC=0.70 < 0.98 — fails ZigZag)
+			// And ratioB=0.50 but ratioC=0.70 < 0.98, also Flat fails (ratioB=0.50 < 0.90)
+			// So W doesn't even qualify — which would make wantWXY=0 for a different reason.
+			// Let's construct W as valid ZigZag then give X that retraces 95%:
+			// W-ZigZag: High(200) → Low(150) → High(170) → Low(100)
+			//   WA=50, WB=20 (40%), WC=70 (140%) → valid ZigZag
+			// X = bounce 95% of W-amplitude (100): 100*0.95=95 → X at 100+95=195
+			name: "Invalid WXY: X-wave retraces more than 90% of W (rejected)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 200.0, Type: model.PivotHigh}, // p0: W-start
+				{Time: 110, Price: 150.0, Type: model.PivotLow},  // p1: W-A (50)
+				{Time: 120, Price: 170.0, Type: model.PivotHigh}, // p2: W-B (20=40% zigzag)
+				{Time: 130, Price: 100.0, Type: model.PivotLow},  // p3: W-C (70=140%)
+				{Time: 140, Price: 195.0, Type: model.PivotHigh}, // p4: X retraces 95% (195-100=95, 95/100=95%)
+				{Time: 150, Price: 140.0, Type: model.PivotLow},  // p5: Y-A
+				{Time: 160, Price: 167.0, Type: model.PivotHigh}, // p6: Y-B (40%)
+				{Time: 170, Price: 80.0, Type: model.PivotLow},   // p7: Y-C
+			},
+			wantWXY: 0,
+		},
+		{
+			// Invalid: Y-wave end is NOT lower than W-wave end (net direction fails).
+			name: "Invalid WXY: Y-end not lower than W-end (net direction fails)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 200.0, Type: model.PivotHigh}, // p0: W-start
+				{Time: 110, Price: 150.0, Type: model.PivotLow},  // p1: W-A (50)
+				{Time: 120, Price: 170.0, Type: model.PivotHigh}, // p2: W-B (20=40%)
+				{Time: 130, Price: 100.0, Type: model.PivotLow},  // p3: W-C (70=140%)
+				{Time: 140, Price: 140.0, Type: model.PivotHigh}, // p4: X (40/100=40%)
+				{Time: 150, Price: 80.0, Type: model.PivotLow},   // p5: Y-A (60)
+				{Time: 160, Price: 110.0, Type: model.PivotHigh}, // p6: Y-B (30=50%)
+				{Time: 170, Price: 105.0, Type: model.PivotLow},  // p7: Y-C (105 > W-end 100 — net direction FAILS)
+			},
+			wantWXY: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := elliott.MatchCorrectiveWaves(tt.pivots)
+			// Filter only WXY results.
+			var wxyResults []model.CorrectiveWave
+			for _, r := range results {
+				if r.Type == "WXY" {
+					wxyResults = append(wxyResults, r)
+				}
+			}
+			if len(wxyResults) != tt.wantWXY {
+				t.Fatalf("expected %d WXY result(s), got %d (all results: %d)", tt.wantWXY, len(wxyResults), len(results))
+			}
+			if tt.verify != nil {
+				tt.verify(t, wxyResults)
+			}
+		})
+	}
+}
+
+func BenchmarkMatchTrianglesAndWXY(b *testing.B) {
+	// Construct a realistic pivot list that exercises both new scanners.
+	// Alternating H/L pattern with gently declining amplitude to hit triangle shape.
+	pivots := make([]model.Pivot, 1000)
+	for i := 0; i < 1000; i++ {
+		pivType := model.PivotLow
+		price := 100.0 + float64(i%2)*10.0
+		if i%2 == 1 {
+			pivType = model.PivotHigh
+		}
+		pivots[i] = model.Pivot{
+			Time:  int64(i * 100),
+			Price: price,
+			Type:  pivType,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = elliott.MatchCorrectiveWaves(pivots)
+	}
+}

@@ -97,6 +97,12 @@ func easyjson6ff3ac1dDecodeWaveSightPkgModel(in *jlexer.Lexer, out *WaveStructur
 			} else {
 				out.ConfidenceScore = float64(in.Float64())
 			}
+		case "degree":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Degree = string(in.String())
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -150,6 +156,11 @@ func easyjson6ff3ac1dEncodeWaveSightPkgModel(out *jwriter.Writer, in WaveStructu
 		const prefix string = ",\"confidence_score\":"
 		out.RawString(prefix)
 		out.Float64(float64(in.ConfidenceScore))
+	}
+	if in.Degree != "" {
+		const prefix string = ",\"degree\":"
+		out.RawString(prefix)
+		out.String(string(in.Degree))
 	}
 	out.RawByte('}')
 }
@@ -501,7 +512,7 @@ func easyjson6ff3ac1dDecodeWaveSightPkgModel3(in *jlexer.Lexer, out *AnalysisRes
 				in.Delim('[')
 				if out.IncompleteWaves == nil {
 					if !in.IsDelim(']') {
-						out.IncompleteWaves = make([]IncompleteWave, 0, 1)
+						out.IncompleteWaves = make([]IncompleteWave, 0, 0)
 					} else {
 						out.IncompleteWaves = []IncompleteWave{}
 					}

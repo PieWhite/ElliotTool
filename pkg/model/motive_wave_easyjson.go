@@ -166,6 +166,12 @@ func easyjson60d273c4DecodeWaveSightPkgModel(in *jlexer.Lexer, out *MotiveWave) 
 			} else {
 				out.IsTruncated = bool(in.Bool())
 			}
+		case "degree":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Degree = string(in.String())
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -267,6 +273,11 @@ func easyjson60d273c4EncodeWaveSightPkgModel(out *jwriter.Writer, in MotiveWave)
 		const prefix string = ",\"is_truncated\":"
 		out.RawString(prefix)
 		out.Bool(bool(in.IsTruncated))
+	}
+	if in.Degree != "" {
+		const prefix string = ",\"degree\":"
+		out.RawString(prefix)
+		out.String(string(in.Degree))
 	}
 	out.RawByte('}')
 }

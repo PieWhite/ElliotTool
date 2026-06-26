@@ -17,4 +17,5 @@ type MotiveWave struct {
 	PurpleBoxes     []TargetBox `json:"purple_boxes,omitempty"`
 	IsDiagonal      bool        `json:"is_diagonal"`
 	IsTruncated     bool        `json:"is_truncated"`
+	Degree          string      `json:"degree,omitempty"`
 }

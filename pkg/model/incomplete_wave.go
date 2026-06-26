@@ -11,4 +11,5 @@ type IncompleteWave struct {
 	Direction       string     `json:"direction"` // "BULLISH" or "BEARISH"
 	ConfidenceScore float64    `json:"confidence_score"`
 	TargetBox       *TargetBox `json:"target_box,omitempty"`
+	Degree          string     `json:"degree,omitempty"`
 }

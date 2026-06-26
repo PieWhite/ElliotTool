@@ -62,10 +62,13 @@ func TestHandler_HandleAnalyze(t *testing.T) {
 			name: "Happy Path - Cached Candles",
 			url:  "/api/analyze/AAPL?timeframe=1D&deviation=0.05",
 			mockGetCandles: func(ctx context.Context, ticker string, timeframe string, from int64, to int64) ([]model.Candle, error) {
-				if ticker != "AAPL" || timeframe != "1D" {
-					t.Errorf("unexpected args: ticker=%s, timeframe=%s", ticker, timeframe)
+				if ticker != "AAPL" {
+					t.Errorf("unexpected ticker: %s", ticker)
 				}
-				return testCandles, nil
+				if timeframe == "1D" {
+					return testCandles, nil
+				}
+				return nil, nil
 			},
 			expectedStatus: http.StatusOK,
 			verifyResponse: func(t *testing.T, body []byte) {

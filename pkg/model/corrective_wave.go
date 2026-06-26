@@ -17,4 +17,5 @@ type CorrectiveWave struct {
 	Type        string      `json:"type"`         // "ZIGZAG", "FLAT", "TRIANGLE", or "WXY"
 	Direction   string      `json:"direction"`    // "BULLISH" or "BEARISH"
 	PurpleBoxes []TargetBox `json:"purple_boxes,omitempty"`
+	Degree      string      `json:"degree,omitempty"`
 }

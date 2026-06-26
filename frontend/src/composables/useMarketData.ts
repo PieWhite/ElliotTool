@@ -34,6 +34,7 @@ export interface MotiveWave {
   purple_boxes?: TargetBox[];
   is_diagonal: boolean;   // Step 8: true if wave is a converging diagonal (wedge)
   is_truncated: boolean;  // Step 8: true if Wave 5 fails to exceed Wave 3
+  degree?: string;
 }
 
 export interface CorrectiveWave {
@@ -47,6 +48,7 @@ export interface CorrectiveWave {
   type: 'ZIGZAG' | 'FLAT' | 'TRIANGLE' | 'WXY';
   direction: 'BULLISH' | 'BEARISH';
   purple_boxes?: TargetBox[];
+  degree?: string;
 }
 
 // Step 8: Incomplete (developing) 1-2-3 structure with a predictive Wave 4 target box.
@@ -58,6 +60,7 @@ export interface IncompleteWave {
   direction: 'BULLISH' | 'BEARISH';
   confidence_score: number;
   target_box?: TargetBox;
+  degree?: string;
 }
 
 // Step 10: Generic wave structure used inside a scenario (type-agnostic for frontend rendering).
@@ -66,6 +69,7 @@ export interface WaveStructure {
   pivots: Pivot[];
   purple_boxes?: TargetBox[];
   confidence_score: number;
+  degree?: string;
 }
 
 // Step 10: A directional scenario (Primary or Alternate) containing all supporting structures.

@@ -59,11 +59,44 @@
 - **Frontend:** TypeScript contracts use `purple_boxes`; `ChartWidget.vue` renders every motive, corrective, and scenario target box as a separate `BoxPrimitive`.
 - **TDD:** Added matrix coverage for textbook bullish motive Wave 5 targets and textbook bearish ZigZag Wave C targets. `go test ./pkg/elliott/... -v` passes.
 
-### [ ] Step 12: Multi-Degree Fractal Validation (Waves within Waves)
+### [x] Step 12: Multi-Degree Fractal Validation (Waves within Waves)
 - **Objective:** Apply the fractal nature of Elliott Wave.
 - **Logic:** A macro Wave 1 on a 1D chart is only valid if the `elliott` package can break it down into a smaller 5-wave motive structure on the 1H chart.
-- **Implementation:** Run the scanners concurrently over multiple timeframes and cross-reference pivot alignment.
-- **Next Task Details:** Design a multi-timeframe validation layer that accepts parent timeframe pivots plus child timeframe pivots, runs motive/corrective/incomplete scanners concurrently, and boosts or rejects macro structures based on whether their major legs contain valid lower-degree substructures with aligned start/end times.
+- **Implementation:**
+  - Designed a concurrent validation layer that scans parent and child timeframes in parallel using goroutines.
+  - Implemented relative time tolerance (25%) and price tolerance (20%) to match parent Wave 1/incomplete W1 with child 5-wave motive substructures.
+  - Configured confidence scoring adjustments: confirmed waves receive a `+0.15` boost (capped at `1.0`), and unconfirmed waves receive a `-0.30` penalty, resulting in rejection if score falls below `0.60`.
+  - Concurrently fetches parent and child candles in the API router for `"1D" -> "1H"`, `"1H" -> "15m"`, and `"15m" -> "1m"` pairs.
+  - Preserved 100% API and frontend compatibility while providing fully validated multi-degree scenarios.
+
+### [x] Step 13: Multi-Degree Labeling & Degree Hierarchy Rendering
+- **Objective:** Distinguish wave degrees visually and structurally per Frost & Prechter.
+- **Logic:** Waves within waves are labeled with distinct degree notations (e.g. Primary `①`, Intermediate `(1)`, Minor `1`, Minute `i`, Minuette `[i]`, Subminuette `(i)`).
+- **Implementation:**
+  - **Backend Models:** Added `degree` metadata field to `MotiveWave`, `CorrectiveWave`, `IncompleteWave`, and `WaveStructure` models.
+  - **JSON Serialization:** Re-generated `easyjson` files (`motive_wave_easyjson.go`, `corrective_wave_easyjson.go`, `incomplete_wave_easyjson.go`, `response_easyjson.go`) to output the `degree` field.
+  - **Scoring & Validation:** Updated `ScenarioBundle` in `scorer.go` to accept a `parentTimeframe` parameter. Maps the timeframe to appropriate Elliott Wave degrees (e.g. 1D -> MINOR, 1H -> MINUTE, 15m -> MINUETTE). Propagates the mapped `Degree` to all waves and `WaveStructure` responses.
+  - **Frontend Refactoring:** Updated TypeScript definitions in `useMarketData.ts` to carry the optional `degree` parameter. Refactored `ChartWidget.vue` to format wave label markers using Frost & Prechter notations (e.g. primary circled, intermediate parenthesized, minor plain, minute lowercase, minuette bracketed lowercase, subminuette parenthesized lowercase) and color-code both the lines and markers accordingly.
+  - **Verification:** Added TDD tests validating degree hierarchy mapping in `scorer_test.go` and verified clean frontend production builds.
+
+### [x] Step 14: Chronological Chaining & Hierarchical Wave Nesting (Complete Chart Analysis)
+- **Objective:** Assemble local isolated wave structures into a continuous, multi-degree nested chart analysis.
+- **Implementation:**
+  - **Hierarchical Nesting:** Refactored `hasValidSubwave` to `findValidSubwave`, which returns the matching child structure that validated the parent wave. Retained these matched child structures and associated them with their parents in a sub-wave lookup map inside `ScenarioBundle`.
+  - **Chronological Chaining (Interval Scheduling):** Designed and implemented a dynamic programming (DP) interval scheduling algorithm (`findBestChain`) running in $O(N^2)$ time with zero recursion overhead. It groups waves into Bullish and Bearish candidate pools and finds the optimal chain of mutually non-overlapping wave structures that maximizes the sum of confidence scores.
+  - **Scenario Assembly:** Refactored scenario compilation to output the entire Bullish chain (with its nested child sub-waves) as the Bullish scenario and the Bearish chain (with its nested child sub-waves) as the Bearish scenario. The higher confidence chain becomes `Primary`, and the other becomes `Alternate`.
+  - **Frontend Verification:** Checked and confirmed that `ChartWidget.vue`'s scenario rendering handles rendering of multiple lines, markers, and target boxes concurrently with degree-specific styling, producing a complete, nested, and chained chart analysis.
+  - **TDD:** Added `TestChronologicalChainingAndNesting` in `scorer_test.go` verifying correct DP assembly of a motive-corrective-motive chain with a nested sub-wave. All tests pass successfully.
+
+### [ ] Step 15: Wave Detection Refinement & Scenario Visual Completeness (Complete Chart Analysis)
+- **Objective:** Refine backend scoring rules and frontend charting elements so motive (1-5), incomplete (1-2-3), and corrective (ABC/Triangle/WXY) waves along with their Purple Box target zones render comprehensively and look like a professional multi-degree chart analysis.
+- **Backend Scoring & Validation Adjustments:**
+  - Soften the fractal validation penalty: instead of hard-rejecting macro waves when child validation is missing or slightly offset, apply a milder penalty or allow a validation tier system to preserve high-scoring macro motive structures.
+  - Add configuration toggles or parameters for deviation adjustment so that users can control scan sensitivity directly.
+- **Frontend & Canvas Rendering Completeness:**
+  - Update `renderScenarioStructures` in `ChartWidget.vue` to map distinct styling parameters per structure type (e.g., solid lines for motive impulses, dashed lines for diagonals/wedges, dotted lines for incomplete structures).
+  - Add color parameterization for `BoxPrimitive` targets inside scenario view: green-tinted boxes for bullish Wave 3/5 projections, red-tinted for bearish, and teal for incomplete Wave 4 target boxes.
+  - Implement marker collision prevention (e.g., vertical offsets or stacking) to keep labels clear and legible when parent and child waves share the same pivot timestamps.
 
 ---
 

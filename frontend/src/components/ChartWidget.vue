@@ -38,9 +38,9 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue';
-import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from 'lightweight-charts';
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers, LineStyle } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts';
-import type { Candle, MotiveWave, CorrectiveWave, IncompleteWave, AnalysisScenario } from '../composables/useMarketData';
+import type { Candle, MotiveWave, CorrectiveWave, IncompleteWave, AnalysisScenario, WaveStructure } from '../composables/useMarketData';
 import { BoxPrimitive } from './BoxPrimitive';
 
 const props = defineProps<{
@@ -57,6 +57,247 @@ let chart: IChartApi | null = null;
 let candlestickSeries: ISeriesApi<'Candlestick'> | null = null;
 let volumeSeries: ISeriesApi<'Histogram'> | null = null;
 let waveSeriesList: ISeriesApi<'Line'>[] = [];
+
+// Helper functions for Elliott Wave degree labeling and coloring
+function formatLabel(text: string, degree?: string): string {
+  if (!degree) return text;
+  const d = degree.toUpperCase();
+  const cleanText = text.replace(/T$/, ''); // Strip truncated T if present
+  const isTruncated = text.endsWith('T');
+  const suffix = isTruncated ? 'T' : '';
+
+  if (d === 'PRIMARY') {
+    const primaryMap: Record<string, string> = {
+      '1': '①', '2': '②', '3': '③', '4': '④', '5': '⑤',
+      'A': 'Ⓐ', 'B': 'Ⓑ', 'C': 'Ⓒ', 'D': 'Ⓓ', 'E': 'Ⓔ', 'X': 'Ⓧ', 'Y': 'Ⓨ'
+    };
+    return (primaryMap[cleanText] || cleanText) + suffix;
+  }
+  if (d === 'INTERMEDIATE') {
+    return `(${cleanText})${suffix}`;
+  }
+  if (d === 'MINOR') {
+    return cleanText + suffix;
+  }
+  if (d === 'MINUTE') {
+    const minuteMap: Record<string, string> = {
+      '1': 'i', '2': 'ii', '3': 'iii', '4': 'iv', '5': 'v',
+      'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'E': 'e', 'X': 'x', 'Y': 'y'
+    };
+    return (minuteMap[cleanText] || cleanText.toLowerCase()) + suffix;
+  }
+  if (d === 'MINUETTE') {
+    const minuetteMap: Record<string, string> = {
+      '1': 'i', '2': 'ii', '3': 'iii', '4': 'iv', '5': 'v',
+      'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'E': 'e', 'X': 'x', 'Y': 'y'
+    };
+    const lower = minuetteMap[cleanText] || cleanText.toLowerCase();
+    return `[${lower}]${suffix}`;
+  }
+  if (d === 'SUBMINUETTE') {
+    const subminMap: Record<string, string> = {
+      '1': 'i', '2': 'ii', '3': 'iii', '4': 'iv', '5': 'v',
+      'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'E': 'e', 'X': 'x', 'Y': 'y'
+    };
+    const lower = subminMap[cleanText] || cleanText.toLowerCase();
+    return `(${lower})${suffix}`;
+  }
+  return text;
+}
+
+function getDegreeColor(degree: string | undefined, defaultColor: string): string {
+  if (!degree) return defaultColor;
+  const d = degree.toUpperCase();
+  switch (d) {
+    case 'PRIMARY': return '#a855f7';      // Purple
+    case 'INTERMEDIATE': return '#f43f5e'; // Rose/Pink
+    case 'MINUTE': return '#06b6d4';       // Cyan
+    case 'MINUETTE': return '#10b981';     // Emerald
+    case 'SUBMINUETTE': return '#818cf8';  // Indigo
+    default: return defaultColor;
+  }
+}
+
+type ScenarioStructureDirection = 'BULLISH' | 'BEARISH';
+
+type ScenarioLineWidth = 1 | 2 | 3 | 4;
+
+type ScenarioRenderConfig = {
+  defaultColor: string;
+  lineStyle: LineStyle;
+  lineWidth: ScenarioLineWidth;
+  boxFillColor: string;
+  boxStrokeColor: string;
+};
+
+type MarkerCollisionState = {
+  occupancy: Map<number, number>;
+  priceOffsetStep: number;
+};
+
+function getStructureDirection(ws: WaveStructure, scenarioBias: ScenarioStructureDirection): ScenarioStructureDirection {
+  if (!ws.pivots || ws.pivots.length < 2) return scenarioBias;
+
+  if (ws.type.startsWith('MOTIVE_') || ws.type === 'INCOMPLETE_123') {
+    return ws.pivots[0].type === 'LOW' ? 'BULLISH' : 'BEARISH';
+  }
+
+  const start = ws.pivots[0];
+  const end = ws.pivots[ws.pivots.length - 1];
+  if (end.price > start.price) return 'BULLISH';
+  if (end.price < start.price) return 'BEARISH';
+  return scenarioBias;
+}
+
+function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStructureDirection): ScenarioRenderConfig {
+  const direction = getStructureDirection(ws, scenarioBias);
+  const directionalColor = direction === 'BULLISH' ? '#22c55e' : '#ef4444';
+  const directionalBox = direction === 'BULLISH'
+    ? { fill: 'rgba(34, 197, 94, 0.14)', stroke: 'rgba(34, 197, 94, 0.72)' }
+    : { fill: 'rgba(239, 68, 68, 0.14)', stroke: 'rgba(239, 68, 68, 0.72)' };
+
+  if (ws.type === 'INCOMPLETE_123') {
+    return {
+      defaultColor: '#22d3ee',
+      lineStyle: LineStyle.Dotted,
+      lineWidth: 3,
+      boxFillColor: 'rgba(20, 184, 166, 0.16)',
+      boxStrokeColor: 'rgba(45, 212, 191, 0.82)',
+    };
+  }
+
+  if (ws.type === 'MOTIVE_DIAGONAL') {
+    return {
+      defaultColor: directionalColor,
+      lineStyle: LineStyle.Dashed,
+      lineWidth: 3,
+      boxFillColor: directionalBox.fill,
+      boxStrokeColor: directionalBox.stroke,
+    };
+  }
+
+  if (ws.type.startsWith('MOTIVE_')) {
+    return {
+      defaultColor: directionalColor,
+      lineStyle: LineStyle.Solid,
+      lineWidth: 3,
+      boxFillColor: directionalBox.fill,
+      boxStrokeColor: directionalBox.stroke,
+    };
+  }
+
+  if (ws.type === 'CORRECTIVE_TRIANGLE') {
+    return {
+      defaultColor: '#2dd4bf',
+      lineStyle: LineStyle.Dashed,
+      lineWidth: 2,
+      boxFillColor: directionalBox.fill,
+      boxStrokeColor: directionalBox.stroke,
+    };
+  }
+
+  if (ws.type === 'CORRECTIVE_WXY') {
+    return {
+      defaultColor: '#818cf8',
+      lineStyle: LineStyle.Dashed,
+      lineWidth: 2,
+      boxFillColor: directionalBox.fill,
+      boxStrokeColor: directionalBox.stroke,
+    };
+  }
+
+  return {
+    defaultColor: '#f59e0b',
+    lineStyle: LineStyle.Dashed,
+    lineWidth: 2,
+    boxFillColor: directionalBox.fill,
+    boxStrokeColor: directionalBox.stroke,
+  };
+}
+
+function getScenarioPriceOffsetStep(scenario: AnalysisScenario): number {
+  const prices = scenario.structures.flatMap(ws => (ws.pivots || []).map(p => p.price));
+  if (prices.length === 0) return 0.01;
+
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min;
+  return Math.max(range * 0.015, Math.max(Math.abs(max), 1) * 0.001);
+}
+
+function getScenarioLabels(ws: WaveStructure): string[] {
+  if (ws.type.startsWith('MOTIVE_')) {
+    return ['1', '2', '3', '4', ws.type === 'MOTIVE_TRUNCATED' ? '5T' : '5'];
+  }
+  if (ws.type === 'INCOMPLETE_123') {
+    return ['1', '2', '3'];
+  }
+  if (ws.type === 'CORRECTIVE_TRIANGLE') {
+    return ['A', 'B', 'C', 'D', 'E'];
+  }
+  if (ws.type === 'CORRECTIVE_WXY') {
+    return ['A', 'B', 'C', 'X', 'Y'];
+  }
+  if (ws.type.startsWith('CORRECTIVE_')) {
+    return ['A', 'B', 'C'];
+  }
+  return [];
+}
+
+function attachCollisionAwareMarkers(
+  markerPoints: { time: number; value: number }[],
+  labels: string[],
+  color: string,
+  degree: string | undefined,
+  collisionState: MarkerCollisionState,
+) {
+  if (!chart || markerPoints.length === 0 || labels.length === 0) return;
+
+  const labelPoints = markerPoints.slice(0, labels.length).map((point, idx) => {
+    const currentSlot = collisionState.occupancy.get(point.time) ?? 0;
+    collisionState.occupancy.set(point.time, currentSlot + 1);
+
+    const direction = currentSlot % 2 === 0 ? 1 : -1;
+    const stackLevel = Math.floor((currentSlot + 1) / 2);
+    const verticalOffset = currentSlot === 0
+      ? 0
+      : direction * stackLevel * collisionState.priceOffsetStep;
+
+    return {
+      time: point.time,
+      value: point.value + verticalOffset,
+      position: currentSlot === 0
+        ? 'inBar' as const
+        : direction > 0 ? 'aboveBar' as const : 'belowBar' as const,
+      text: formatLabel(labels[idx], degree),
+    };
+  });
+
+  const labelSeries = chart.addSeries(LineSeries, {
+    color: 'rgba(0, 0, 0, 0)',
+    lineWidth: 1,
+    lineStyle: LineStyle.Solid,
+    lineVisible: false,
+    crosshairMarkerVisible: false,
+    lastValueVisible: false,
+    priceLineVisible: false,
+  });
+
+  labelSeries.setData(labelPoints.map(p => ({ time: p.time as Time, value: p.value })));
+  waveSeriesList.push(labelSeries);
+
+  const markers = labelPoints.map(point => ({
+    time: point.time as Time,
+    position: point.position,
+    shape: 'circle' as const,
+    color,
+    text: point.text,
+    size: 1.4,
+  }));
+
+  markers.sort((a, b) => (a.time as number) - (b.time as number));
+  createSeriesMarkers(labelSeries, markers);
+}
 
 // Redraw chart layers when input data updates
 const renderChartData = () => {
@@ -154,30 +395,23 @@ const renderChartData = () => {
 // Renders a colour-coded line for each structure's pivot sequence and attaches
 // any purple_boxes to the candlestick series.
 const renderScenarioStructures = (scenario: AnalysisScenario) => {
-  const isBullishScenario = scenario.bias === 'BULLISH';
+  const scenarioBias = scenario.bias;
+  const markerCollisionState: MarkerCollisionState = {
+    occupancy: new Map<number, number>(),
+    priceOffsetStep: getScenarioPriceOffsetStep(scenario),
+  };
 
   scenario.structures.forEach((ws) => {
     if (!ws.pivots || ws.pivots.length < 2) return;
 
-    // Pick colour by structure type
-    let color = isBullishScenario ? '#22c55e' : '#ef4444'; // default motive green/red
-    let lineStyle = 0; // solid
-    if (ws.type.startsWith('CORRECTIVE_')) {
-      if (ws.type === 'CORRECTIVE_TRIANGLE') color = '#2dd4bf'; // teal
-      else if (ws.type === 'CORRECTIVE_WXY') color = '#818cf8'; // indigo
-      else color = '#f59e0b'; // amber
-      lineStyle = 2; // dashed
-    } else if (ws.type === 'INCOMPLETE_123') {
-      color = '#22d3ee'; // cyan
-      lineStyle = 3; // dotted
-    } else if (ws.type === 'MOTIVE_DIAGONAL') {
-      lineStyle = 2;
-    }
+    const renderConfig = getScenarioRenderConfig(ws, scenarioBias);
+    const color = getDegreeColor(ws.degree, renderConfig.defaultColor);
 
     const lineSeries = chart!.addSeries(LineSeries, {
       color,
-      lineWidth: 2,
-      lineStyle,
+      lineWidth: renderConfig.lineWidth,
+      lineStyle: renderConfig.lineStyle,
+      lineVisible: true,
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
@@ -185,7 +419,8 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
 
     const points = ws.pivots.map(p => ({ time: p.time as number, value: p.price }));
 
-    // Ensure strictly ascending times
+    // Ensure strictly ascending times for Lightweight Charts while preserving cross-structure
+    // timestamp collisions for the label-offset pass below.
     for (let i = 1; i < points.length; i++) {
       if (points[i].time <= points[i - 1].time) {
         points[i].time = points[i - 1].time + 1;
@@ -195,7 +430,14 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
     lineSeries.setData(points.map(p => ({ time: p.time as Time, value: p.value })));
     waveSeriesList.push(lineSeries);
 
-    // Attach purple boxes if present
+    attachCollisionAwareMarkers(
+      points.slice(1),
+      getScenarioLabels(ws),
+      color,
+      ws.degree,
+      markerCollisionState,
+    );
+
     if (ws.purple_boxes && candlestickSeries) {
       ws.purple_boxes.forEach(box => {
         const primitive = new BoxPrimitive(
@@ -203,6 +445,8 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
           box.end_time,
           box.min_price,
           box.max_price,
+          renderConfig.boxFillColor,
+          renderConfig.boxStrokeColor,
         );
         candlestickSeries!.attachPrimitive(primitive);
       });
@@ -221,16 +465,18 @@ const renderFlatWaves = () => {
     if (!wave.start || !wave.w1 || !wave.w2 || !wave.w3 || !wave.w4 || !wave.w5) return;
 
     const isBullish = wave.direction === 'BULLISH';
-    const waveColor = isBullish ? '#22c55e' : '#ef4444'; // Green or Red
+    const defaultColor = isBullish ? '#22c55e' : '#ef4444'; // Green or Red
+    const waveColor = getDegreeColor(wave.degree, defaultColor);
 
-    // Diagonals render as dashed (lineStyle 2), standard impulses render solid (lineStyle 0).
-    const lineStyle = wave.is_diagonal ? 2 : 0;
+    // Diagonals render as solid in this test.
+    const lineStyle = LineStyle.Solid;
 
     // Create line series connecting pivots
     const lineSeries = chart!.addSeries(LineSeries, {
       color: waveColor,
       lineWidth: 2,
       lineStyle,
+      lineVisible: true,
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
@@ -264,8 +510,8 @@ const renderFlatWaves = () => {
         time: points[1].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#3b82f6', // Bright Blue for pivots
-        text: '1',
+        color: waveColor,
+        text: formatLabel('1', wave.degree),
         size: 1.4,
         price: wave.w1.price,
       },
@@ -273,8 +519,8 @@ const renderFlatWaves = () => {
         time: points[2].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#3b82f6',
-        text: '2',
+        color: waveColor,
+        text: formatLabel('2', wave.degree),
         size: 1.4,
         price: wave.w2.price,
       },
@@ -282,8 +528,8 @@ const renderFlatWaves = () => {
         time: points[3].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#3b82f6',
-        text: '3',
+        color: waveColor,
+        text: formatLabel('3', wave.degree),
         size: 1.4,
         price: wave.w3.price,
       },
@@ -291,8 +537,8 @@ const renderFlatWaves = () => {
         time: points[4].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#3b82f6',
-        text: '4',
+        color: waveColor,
+        text: formatLabel('4', wave.degree),
         size: 1.4,
         price: wave.w4.price,
       },
@@ -300,8 +546,8 @@ const renderFlatWaves = () => {
         time: points[5].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: wave.is_truncated ? '#f59e0b' : '#3b82f6', // Amber for truncated Wave 5
-        text: wave5Label,
+        color: waveColor,
+        text: formatLabel(wave5Label, wave.degree),
         size: 1.4,
         price: wave.w5.price,
       },
@@ -309,7 +555,7 @@ const renderFlatWaves = () => {
 
     // Sort markers chronologically to comply with Lightweight Charts rules
     markers.sort((a, b) => (a.time as number) - (b.time as number));
-    
+
     // Attach series markers using Lightweight Charts v5 createSeriesMarkers helper
     createSeriesMarkers(lineSeries, markers);
 
@@ -332,14 +578,17 @@ const renderFlatWaves = () => {
     if (!wave.start || !wave.wa || !wave.wb || !wave.wc) return;
 
     // Use Amber for standard ABC, Teal for Triangles, Indigo for WXY Double Threes.
-    let waveColor = '#f59e0b'; // Amber (ZigZag/Flat)
-    if (wave.type === 'TRIANGLE') waveColor = '#2dd4bf';  // Teal
-    if (wave.type === 'WXY') waveColor = '#818cf8';       // Indigo
+    let defaultColor = '#f59e0b'; // Amber (ZigZag/Flat)
+    if (wave.type === 'TRIANGLE') defaultColor = '#2dd4bf';  // Teal
+    if (wave.type === 'WXY') defaultColor = '#818cf8';       // Indigo
+
+    const waveColor = getDegreeColor(wave.degree, defaultColor);
 
     const lineSeries = chart!.addSeries(LineSeries, {
       color: waveColor,
       lineWidth: 2,
-      lineStyle: 2, // Dashed line for all corrective waves
+      lineStyle: LineStyle.Solid, // Solid line for testing
+      lineVisible: true,
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
@@ -385,26 +634,20 @@ const renderFlatWaves = () => {
       labels.push('X', 'Y');
     }
 
-    const labelColor = wave.type === 'TRIANGLE'
-      ? '#2dd4bf'
-      : wave.type === 'WXY'
-        ? '#818cf8'
-        : '#ec4899'; // Pinkish-magenta for standard ABC
-
     // Slice pivots 1..n for labeling (skip Start at index 0)
     const markerPoints = points.slice(1);
     const markers = markerPoints.slice(0, labels.length).map((p, idx) => ({
       time: p.time as Time,
       position: 'inBar' as const,
       shape: 'circle' as const,
-      color: labelColor,
-      text: labels[idx],
+      color: waveColor,
+      text: formatLabel(labels[idx], wave.degree),
       size: 1.4,
       price: p.value,
     }));
 
     markers.sort((a, b) => (a.time as number) - (b.time as number));
-    
+
     // Attach series markers using Lightweight Charts v5 createSeriesMarkers helper
     createSeriesMarkers(lineSeries, markers);
 
@@ -422,15 +665,18 @@ const renderFlatWaves = () => {
     }
   });
 
-  // 7. Draw Incomplete (developing) 1-2-3 waves — Step 8
-  //    Rendered as a distinct dashed cyan line; Wave 4 target_box rendered in teal/cyan.
+  // 7. Draw Incomplete (developing) 1-2-3 waves
   props.incompleteWaves.forEach((wave) => {
     if (!wave.start || !wave.w1 || !wave.w2 || !wave.w3) return;
 
+    const defaultColor = '#22d3ee'; // Cyan
+    const waveColor = getDegreeColor(wave.degree, defaultColor);
+
     const lineSeries = chart!.addSeries(LineSeries, {
-      color: '#22d3ee', // Cyan
+      color: waveColor,
       lineWidth: 2,
-      lineStyle: 3, // Dotted dashed — distinct from solid motive and dashed corrective
+      lineStyle: LineStyle.Solid, // Solid line for testing
+      lineVisible: true,
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
@@ -459,8 +705,8 @@ const renderFlatWaves = () => {
         time: points[1].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#22d3ee',
-        text: '①',
+        color: waveColor,
+        text: formatLabel('1', wave.degree),
         size: 1.4,
         price: wave.w1.price,
       },
@@ -468,8 +714,8 @@ const renderFlatWaves = () => {
         time: points[2].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#22d3ee',
-        text: '②',
+        color: waveColor,
+        text: formatLabel('2', wave.degree),
         size: 1.4,
         price: wave.w2.price,
       },
@@ -477,8 +723,8 @@ const renderFlatWaves = () => {
         time: points[3].time as Time,
         position: 'inBar' as const,
         shape: 'circle' as const,
-        color: '#22d3ee',
-        text: '③',
+        color: waveColor,
+        text: formatLabel('3', wave.degree),
         size: 1.4,
         price: wave.w3.price,
       },
@@ -487,7 +733,7 @@ const renderFlatWaves = () => {
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     createSeriesMarkers(lineSeries, markers);
 
-    // Render the predictive Wave 4 target_box as a teal/cyan BoxPrimitive
+    // Render the predictive Wave 4 target_box
     if (wave.target_box && candlestickSeries) {
       const box = new BoxPrimitive(
         wave.target_box.start_time,

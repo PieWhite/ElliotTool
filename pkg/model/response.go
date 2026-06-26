@@ -13,6 +13,7 @@ type WaveStructure struct {
 	Pivots          []Pivot     `json:"pivots"`
 	PurpleBoxes     []TargetBox `json:"purple_boxes,omitempty"`
 	ConfidenceScore float64     `json:"confidence_score"`
+	Degree          string      `json:"degree,omitempty"`
 }
 
 // AnalysisScenario bundles a directional bias with one or more wave structures

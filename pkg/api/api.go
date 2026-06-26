@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"WaveSight/pkg/elliott"
@@ -99,38 +100,52 @@ func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	fromTime, _ := time.Parse("2006-01-02", fromDateStr)
 	toTime, _ := time.Parse("2006-01-02", toDateStr)
 
-	candles, err := h.repo.GetCandles(r.Context(), ticker, timeframe, fromTime.Unix(), toTime.Unix())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("database query error: %v", err), http.StatusInternalServerError)
-		return
+	var candles []model.Candle
+	var childCandles []model.Candle
+	var errParent error
+
+	childTimeframe := getChildTimeframe(timeframe)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		candles, errParent = h.getOrFetchCandles(r.Context(), ticker, timeframe, multiplier, timespan, fromDateStr, toDateStr, fromTime, toTime)
+	}()
+
+	if childTimeframe != "" {
+		childMultiplier, childTimespan, _, _, parseErr := parseTimeframe(childTimeframe)
+		if parseErr == nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				childCandles, _ = h.getOrFetchCandles(r.Context(), ticker, childTimeframe, childMultiplier, childTimespan, fromDateStr, toDateStr, fromTime, toTime)
+			}()
+		}
 	}
 
+	wg.Wait()
+
+	if errParent != nil {
+		http.Error(w, errParent.Error(), http.StatusInternalServerError)
+		return
+	}
 	if len(candles) == 0 {
-		// Cache miss: fetch from external client
-		candles, err = h.fetcher.FetchCandles(r.Context(), ticker, multiplier, timespan, fromDateStr, toDateStr)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to fetch candles: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		if len(candles) == 0 {
-			http.Error(w, fmt.Sprintf("ticker %s not found or contains no historical data", ticker), http.StatusNotFound)
-			return
-		}
-
-		// Write fetched candles to cache
-		if err := h.repo.SaveCandles(r.Context(), ticker, timeframe, candles); err != nil {
-			http.Error(w, fmt.Sprintf("failed to cache candles: %v", err), http.StatusInternalServerError)
-			return
-		}
+		http.Error(w, fmt.Sprintf("ticker %s not found or contains no historical data", ticker), http.StatusNotFound)
+		return
 	}
 
 	// Run calculations and scanning pipeline
 	pivots := zigzag.CalculateZigZag(candles, percentDeviation)
 
+	var childPivots []model.Pivot
+	if len(childCandles) > 0 {
+		childPivots = zigzag.CalculateZigZag(childCandles, percentDeviation)
+	}
+
 	// ScenarioBundle ranks all patterns into a primary/alternate pair while also
 	// returning the legacy flat slices for backward compatibility.
-	motiveWaves, correctiveWaves, incompleteWaves, scenarios := elliott.ScenarioBundle(pivots)
+	motiveWaves, correctiveWaves, incompleteWaves, scenarios := elliott.ScenarioBundle(pivots, childPivots, timeframe)
 
 	// Compile high-performance Response struct
 	resp := model.AnalysisResponse{
@@ -207,5 +222,43 @@ func parseTimeframe(tf string) (multiplier int, timespan string, from string, to
 	from = now.AddDate(0, 0, -daysBack).Format("2006-01-02")
 	to = now.Format("2006-01-02")
 	return multiplier, timespan, from, to, nil
+}
+
+func getChildTimeframe(parent string) string {
+	p := strings.ToUpper(parent)
+	if p == "1D" || p == "D" || strings.HasSuffix(p, "DAY") || strings.HasSuffix(p, "DAYS") {
+		return "1H"
+	}
+	if p == "1H" || p == "H" || strings.HasSuffix(p, "HOUR") || strings.HasSuffix(p, "HOURS") {
+		return "15m"
+	}
+	if p == "15M" || p == "15MIN" || p == "15MINUTES" || p == "15MINUTE" {
+		return "1m"
+	}
+	return ""
+}
+
+// getOrFetchCandles tries loading candles from SQLite cache first, then falls back to fetching from external client.
+func (h *Handler) getOrFetchCandles(ctx context.Context, ticker, timeframe string, multiplier int, timespan string, fromDateStr, toDateStr string, fromTime, toTime time.Time) ([]model.Candle, error) {
+	candles, err := h.repo.GetCandles(ctx, ticker, timeframe, fromTime.Unix(), toTime.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("database query error: %w", err)
+	}
+
+	if len(candles) == 0 {
+		// Cache miss: fetch from external client
+		candles, err = h.fetcher.FetchCandles(ctx, ticker, multiplier, timespan, fromDateStr, toDateStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch candles: %w", err)
+		}
+
+		if len(candles) > 0 {
+			// Write fetched candles to cache
+			if err := h.repo.SaveCandles(ctx, ticker, timeframe, candles); err != nil {
+				return nil, fmt.Errorf("failed to cache candles: %w", err)
+			}
+		}
+	}
+	return candles, nil
 }
 

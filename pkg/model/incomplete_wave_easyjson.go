@@ -113,6 +113,12 @@ func easyjson67127156DecodeWaveSightPkgModel(in *jlexer.Lexer, out *IncompleteWa
 					(*out.TargetBox).UnmarshalEasyJSON(in)
 				}
 			}
+		case "degree":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Degree = string(in.String())
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -177,6 +183,11 @@ func easyjson67127156EncodeWaveSightPkgModel(out *jwriter.Writer, in IncompleteW
 		const prefix string = ",\"target_box\":"
 		out.RawString(prefix)
 		(*in.TargetBox).MarshalEasyJSON(out)
+	}
+	if in.Degree != "" {
+		const prefix string = ",\"degree\":"
+		out.RawString(prefix)
+		out.String(string(in.Degree))
 	}
 	out.RawByte('}')
 }

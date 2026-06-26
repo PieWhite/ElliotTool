@@ -168,6 +168,12 @@ func easyjsonB04a0c2DecodeWaveSightPkgModel(in *jlexer.Lexer, out *CorrectiveWav
 				}
 				in.Delim(']')
 			}
+		case "degree":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Degree = string(in.String())
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -256,6 +262,11 @@ func easyjsonB04a0c2EncodeWaveSightPkgModel(out *jwriter.Writer, in CorrectiveWa
 			}
 			out.RawByte(']')
 		}
+	}
+	if in.Degree != "" {
+		const prefix string = ",\"degree\":"
+		out.RawString(prefix)
+		out.String(string(in.Degree))
 	}
 	out.RawByte('}')
 }

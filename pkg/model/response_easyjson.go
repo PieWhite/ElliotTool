@@ -124,6 +124,33 @@ func easyjson6ff3ac1dDecodeWaveSightPkgModel(in *jlexer.Lexer, out *AnalysisResp
 				}
 				in.Delim(']')
 			}
+		case "incomplete_waves":
+			if in.IsNull() {
+				in.Skip()
+				out.IncompleteWaves = nil
+			} else {
+				in.Delim('[')
+				if out.IncompleteWaves == nil {
+					if !in.IsDelim(']') {
+						out.IncompleteWaves = make([]IncompleteWave, 0, 1)
+					} else {
+						out.IncompleteWaves = []IncompleteWave{}
+					}
+				} else {
+					out.IncompleteWaves = (out.IncompleteWaves)[:0]
+				}
+				for !in.IsDelim(']') {
+					var v4 IncompleteWave
+					if in.IsNull() {
+						in.Skip()
+					} else {
+						(v4).UnmarshalEasyJSON(in)
+					}
+					out.IncompleteWaves = append(out.IncompleteWaves, v4)
+					in.WantComma()
+				}
+				in.Delim(']')
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -155,11 +182,11 @@ func easyjson6ff3ac1dEncodeWaveSightPkgModel(out *jwriter.Writer, in AnalysisRes
 			out.RawString("null")
 		} else {
 			out.RawByte('[')
-			for v4, v5 := range in.Candles {
-				if v4 > 0 {
+			for v5, v6 := range in.Candles {
+				if v5 > 0 {
 					out.RawByte(',')
 				}
-				(v5).MarshalEasyJSON(out)
+				(v6).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -171,11 +198,11 @@ func easyjson6ff3ac1dEncodeWaveSightPkgModel(out *jwriter.Writer, in AnalysisRes
 			out.RawString("null")
 		} else {
 			out.RawByte('[')
-			for v6, v7 := range in.MotiveWaves {
-				if v6 > 0 {
+			for v7, v8 := range in.MotiveWaves {
+				if v7 > 0 {
 					out.RawByte(',')
 				}
-				(v7).MarshalEasyJSON(out)
+				(v8).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -187,11 +214,27 @@ func easyjson6ff3ac1dEncodeWaveSightPkgModel(out *jwriter.Writer, in AnalysisRes
 			out.RawString("null")
 		} else {
 			out.RawByte('[')
-			for v8, v9 := range in.CorrectiveWaves {
-				if v8 > 0 {
+			for v9, v10 := range in.CorrectiveWaves {
+				if v9 > 0 {
 					out.RawByte(',')
 				}
-				(v9).MarshalEasyJSON(out)
+				(v10).MarshalEasyJSON(out)
+			}
+			out.RawByte(']')
+		}
+	}
+	{
+		const prefix string = ",\"incomplete_waves\":"
+		out.RawString(prefix)
+		if in.IncompleteWaves == nil && (out.Flags&jwriter.NilSliceAsEmpty) == 0 {
+			out.RawString("null")
+		} else {
+			out.RawByte('[')
+			for v11, v12 := range in.IncompleteWaves {
+				if v11 > 0 {
+					out.RawByte(',')
+				}
+				(v12).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}

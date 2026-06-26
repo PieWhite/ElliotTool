@@ -54,20 +54,40 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 				continue
 			}
 
-			// Cardinal Rule 3: Wave 4 cannot overlap into Wave 1 territory (Wave 4 low must be above Wave 1 high).
-			if p4.Price <= p1.Price {
-				continue
-			}
-
-			// Cardinal Rule 2: Wave 3 cannot be the shortest of waves 1, 3, and 5.
 			len1 := p1.Price - p0.Price
 			len3 := p3.Price - p2.Price
 			len5 := p5.Price - p4.Price
-			if len3 < len1 && len3 < len5 {
-				continue
+
+			// Cardinal Rule 3: Wave 4 cannot overlap into Wave 1 territory (Wave 4 low must be above Wave 1 high)
+			// EXCEPT in converging diagonals where W1 > W3 > W5.
+			overlap := p4.Price <= p1.Price
+			isDiagonal := false
+			if overlap {
+				if len1 > len3 && len3 > len5 {
+					isDiagonal = true
+				} else {
+					continue
+				}
 			}
 
-			score := calculateConfidenceScore(p0, p1, p2, p3, p4, p5)
+			// Truncation: Wave 5 fails to break above Wave 3, allowed if Wave 3 is extended.
+			isTruncated := false
+			if p5.Price <= p3.Price {
+				if len3 > len1 {
+					isTruncated = true
+				} else {
+					continue
+				}
+			}
+
+			// Cardinal Rule 2: Wave 3 cannot be the shortest of waves 1, 3, and 5.
+			if !isDiagonal {
+				if len3 < len1 && len3 < len5 {
+					continue
+				}
+			}
+
+			score := calculateConfidenceScore(p0, p1, p2, p3, p4, p5, isDiagonal, isTruncated)
 			if score < minConfidenceScore {
 				continue
 			}
@@ -82,6 +102,8 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 				Direction:       "BULLISH",
 				ConfidenceScore: score,
 				PurpleBox:       calculateTargetBox(p0, p1, p2, p3, p4, p5),
+				IsDiagonal:      isDiagonal,
+				IsTruncated:     isTruncated,
 			})
 
 		} else if p0.Type == model.PivotHigh {
@@ -108,20 +130,40 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 				continue
 			}
 
-			// Cardinal Rule 3: Wave 4 cannot overlap into Wave 1 territory (Wave 4 high must be below Wave 1 low).
-			if p4.Price >= p1.Price {
-				continue
+			len1 := p0.Price - p1.Price
+			len3 := p2.Price - p3.Price
+			len5 := p4.Price - p5.Price
+
+			// Cardinal Rule 3: Wave 4 cannot overlap into Wave 1 territory (Wave 4 high must be below Wave 1 low)
+			// EXCEPT in converging diagonals where W1 > W3 > W5.
+			overlap := p4.Price >= p1.Price
+			isDiagonal := false
+			if overlap {
+				if len1 > len3 && len3 > len5 {
+					isDiagonal = true
+				} else {
+					continue
+				}
+			}
+
+			// Truncation: Wave 5 fails to break below Wave 3, allowed if Wave 3 is extended.
+			isTruncated := false
+			if p5.Price >= p3.Price {
+				if len3 > len1 {
+					isTruncated = true
+				} else {
+					continue
+				}
 			}
 
 			// Cardinal Rule 2: Wave 3 cannot be the shortest of waves 1, 3, and 5.
-			len1 := math.Abs(p1.Price - p0.Price)
-			len3 := math.Abs(p3.Price - p2.Price)
-			len5 := math.Abs(p5.Price - p4.Price)
-			if len3 < len1 && len3 < len5 {
-				continue
+			if !isDiagonal {
+				if len3 < len1 && len3 < len5 {
+					continue
+				}
 			}
 
-			score := calculateConfidenceScore(p0, p1, p2, p3, p4, p5)
+			score := calculateConfidenceScore(p0, p1, p2, p3, p4, p5, isDiagonal, isTruncated)
 			if score < minConfidenceScore {
 				continue
 			}
@@ -136,6 +178,8 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 				Direction:       "BEARISH",
 				ConfidenceScore: score,
 				PurpleBox:       calculateTargetBox(p0, p1, p2, p3, p4, p5),
+				IsDiagonal:      isDiagonal,
+				IsTruncated:     isTruncated,
 			})
 		}
 	}
@@ -153,7 +197,7 @@ const (
 // 1. Wave 2 Retracement Check: Ideal retracement of Wave 1 is 50.0%, 61.8%, or 78.6% (tolerance +/- 0.02).
 // 2. Wave 3 Extension Check: Ideal extension relative to Wave 1 is 161.8% or 261.8% (or higher).
 // 3. Wave 5 Target Check: Ideal length matches 100% of Wave 1, or 61.8% of the net price distance from Start to Wave 3.
-func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot) float64 {
+func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, isTruncated bool) float64 {
 	// Calculate Wave absolute price lengths
 	len1 := math.Abs(p1.Price - p0.Price)
 	len2 := math.Abs(p1.Price - p2.Price)
@@ -182,12 +226,22 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot) float64 {
 	// --- Wave 3 Extension Check ---
 	ratio3 := len3 / len1
 	score3 := 0.0
-	if ratio3 >= 2.618-fibTolerance {
-		score3 = 1.0
+	if isDiagonal {
+		minD3 := math.Abs(ratio3 - 0.618)
+		if d := math.Abs(ratio3 - 0.786); d < minD3 {
+			minD3 = d
+		}
+		if minD3 <= fibTolerance {
+			score3 = 1.0 - (minD3 / fibTolerance)
+		}
 	} else {
-		d3 := math.Abs(ratio3 - 1.618)
-		if d3 <= fibTolerance {
-			score3 = 1.0 - (d3 / fibTolerance)
+		if ratio3 >= 2.618-fibTolerance {
+			score3 = 1.0
+		} else {
+			d3 := math.Abs(ratio3 - 1.618)
+			if d3 <= fibTolerance {
+				score3 = 1.0 - (d3 / fibTolerance)
+			}
 		}
 	}
 
@@ -199,6 +253,29 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot) float64 {
 	minD5 := d5A
 	if d5B < minD5 {
 		minD5 = d5B
+	}
+	if isTruncated || isDiagonal {
+		len4 := math.Abs(p4.Price - p3.Price)
+		len3_abs := math.Abs(p3.Price - p2.Price)
+		if len4 > 0 {
+			if d := math.Abs((len5 / len4) - 0.382); d < minD5 {
+				minD5 = d
+			}
+			if d := math.Abs((len5 / len4) - 0.618); d < minD5 {
+				minD5 = d
+			}
+		}
+		if len3_abs > 0 {
+			if d := math.Abs((len5 / len3_abs) - 0.618); d < minD5 {
+				minD5 = d
+			}
+			if d := math.Abs((len5 / len3_abs) - 0.382); d < minD5 {
+				minD5 = d
+			}
+		}
+		if d := math.Abs(ratio5A - 0.382); d < minD5 {
+			minD5 = d
+		}
 	}
 	score5 := 0.0
 	if minD5 <= fibTolerance {
@@ -249,6 +326,189 @@ func calculateTargetBox(p0, p1, p2, p3, p4, p5 *model.Pivot) *model.TargetBox {
 	deltaT := float64(p3.Time - p0.Time)
 	startTime := float64(p4.Time) + (deltaT * 0.382)
 	endTime := float64(p4.Time) + (deltaT * 0.618)
+
+	return &model.TargetBox{
+		MinPrice:  minPrice,
+		MaxPrice:  maxPrice,
+		StartTime: int64(math.Round(startTime)),
+		EndTime:   int64(math.Round(endTime)),
+	}
+}
+
+// MatchIncompleteWaves scans a slice of pivots for verified developing 1-2-3 Elliott Wave structures.
+// It excludes any structure that is already completed (i.e. whose Start pivot matches a completed MotiveWave).
+func MatchIncompleteWaves(pivots []model.Pivot) []model.IncompleteWave {
+	n := len(pivots)
+	if n < 4 {
+		return nil
+	}
+
+	// First, match all completed motive waves to find their start times.
+	completedWaves := MatchMotiveWaves(pivots)
+	// We count incomplete waves up to maximum n/4 capacity.
+	incompleteWaves := make([]model.IncompleteWave, 0, n/4)
+
+	for i := 0; i <= n-4; i++ {
+		p0 := &pivots[i]
+
+		// Check if there is already a completed motive wave starting at this pivot's time.
+		// Since completedWaves is typically small, a linear scan preserves zero heap allocation
+		// compared to allocating a map.
+		hasCompleted := false
+		for j := range completedWaves {
+			if completedWaves[j].Start != nil && completedWaves[j].Start.Time == p0.Time {
+				hasCompleted = true
+				break
+			}
+		}
+		if hasCompleted {
+			continue
+		}
+
+		p1 := &pivots[i+1]
+		p2 := &pivots[i+2]
+		p3 := &pivots[i+3]
+
+		if p0.Type == model.PivotLow {
+			// BULLISH check
+			if p1.Type != model.PivotHigh ||
+				p2.Type != model.PivotLow ||
+				p3.Type != model.PivotHigh {
+				continue
+			}
+
+			// Verify direction
+			if p1.Price <= p0.Price ||
+				p2.Price >= p1.Price ||
+				p3.Price <= p2.Price {
+				continue
+			}
+
+			// Cardinal Rule 1: Wave 2 cannot retrace below the start of Wave 1.
+			if p2.Price < p0.Price {
+				continue
+			}
+
+			score := calculateIncompleteConfidenceScore(p0, p1, p2, p3)
+			if score < minConfidenceScore {
+				continue
+			}
+
+			incompleteWaves = append(incompleteWaves, model.IncompleteWave{
+				Start:           p0,
+				W1:              p1,
+				W2:              p2,
+				W3:              p3,
+				Direction:       "BULLISH",
+				ConfidenceScore: score,
+				TargetBox:       calculateWave4TargetBox(p0, p1, p2, p3, "BULLISH"),
+			})
+
+		} else if p0.Type == model.PivotHigh {
+			// BEARISH check
+			if p1.Type != model.PivotLow ||
+				p2.Type != model.PivotHigh ||
+				p3.Type != model.PivotLow {
+				continue
+			}
+
+			// Verify direction
+			if p1.Price >= p0.Price ||
+				p2.Price <= p1.Price ||
+				p3.Price >= p2.Price {
+				continue
+			}
+
+			// Cardinal Rule 1: Wave 2 cannot retrace above the start of Wave 1.
+			if p2.Price > p0.Price {
+				continue
+			}
+
+			score := calculateIncompleteConfidenceScore(p0, p1, p2, p3)
+			if score < minConfidenceScore {
+				continue
+			}
+
+			incompleteWaves = append(incompleteWaves, model.IncompleteWave{
+				Start:           p0,
+				W1:              p1,
+				W2:              p2,
+				W3:              p3,
+				Direction:       "BEARISH",
+				ConfidenceScore: score,
+				TargetBox:       calculateWave4TargetBox(p0, p1, p2, p3, "BEARISH"),
+			})
+		}
+	}
+
+	return incompleteWaves
+}
+
+// calculateIncompleteConfidenceScore calculates the Fibonacci alignment score for a 1-2-3 structure.
+func calculateIncompleteConfidenceScore(p0, p1, p2, p3 *model.Pivot) float64 {
+	len1 := math.Abs(p1.Price - p0.Price)
+	len2 := math.Abs(p1.Price - p2.Price)
+	len3 := math.Abs(p3.Price - p2.Price)
+
+	if len1 == 0 {
+		return 0.0
+	}
+
+	// --- Wave 2 Retracement Check ---
+	ratio2 := len2 / len1
+	minD2 := math.Abs(ratio2 - 0.50)
+	if d := math.Abs(ratio2 - 0.618); d < minD2 {
+		minD2 = d
+	}
+	if d := math.Abs(ratio2 - 0.786); d < minD2 {
+		minD2 = d
+	}
+	score2 := 0.0
+	if minD2 <= fibTolerance {
+		score2 = 1.0 - (minD2 / fibTolerance)
+	}
+
+	// --- Wave 3 Extension Check ---
+	ratio3 := len3 / len1
+	score3 := 0.0
+	if ratio3 >= 2.618-fibTolerance {
+		score3 = 1.0
+	} else {
+		d3 := math.Abs(ratio3 - 1.618)
+		if d3 <= fibTolerance {
+			score3 = 1.0 - (d3 / fibTolerance)
+		}
+	}
+
+	// Average components
+	return (score2 + score3) / 2.0
+}
+
+// calculateWave4TargetBox calculates predictive coordinates for the upcoming Wave 4 based on 38.2% retracement of Wave 3.
+func calculateWave4TargetBox(p0, p1, p2, p3 *model.Pivot, direction string) *model.TargetBox {
+	len3 := math.Abs(p3.Price - p2.Price)
+	var targetPrice float64
+	if direction == "BULLISH" {
+		targetPrice = p3.Price - 0.382*len3
+	} else {
+		targetPrice = p3.Price + 0.382*len3
+	}
+
+	val1 := targetPrice * 0.985
+	val2 := targetPrice * 1.015
+	minPrice := val1
+	maxPrice := val2
+	if val2 < val1 {
+		minPrice = val2
+		maxPrice = val1
+	}
+
+	deltaT := float64(p3.Time - p0.Time)
+	if deltaT <= 0 {
+		deltaT = 600
+	}
+	startTime := float64(p3.Time) + (deltaT * 0.382)
+	endTime := float64(p3.Time) + (deltaT * 0.618)
 
 	return &model.TargetBox{
 		MinPrice:  minPrice,

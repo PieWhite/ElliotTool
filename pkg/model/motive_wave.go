@@ -15,4 +15,6 @@ type MotiveWave struct {
 	Direction       string     `json:"direction"` // "BULLISH" or "BEARISH"
 	ConfidenceScore float64    `json:"confidence_score"`
 	PurpleBox       *TargetBox `json:"purple_box,omitempty"`
+	IsDiagonal      bool       `json:"is_diagonal"`
+	IsTruncated     bool       `json:"is_truncated"`
 }

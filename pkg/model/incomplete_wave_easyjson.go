@@ -17,7 +17,7 @@ var (
 	_ easyjson.Marshaler
 )
 
-func easyjson60d273c4DecodeWaveSightPkgModel(in *jlexer.Lexer, out *MotiveWave) {
+func easyjson67127156DecodeWaveSightPkgModel(in *jlexer.Lexer, out *IncompleteWave) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -87,34 +87,6 @@ func easyjson60d273c4DecodeWaveSightPkgModel(in *jlexer.Lexer, out *MotiveWave) 
 					(*out.W3).UnmarshalEasyJSON(in)
 				}
 			}
-		case "w4":
-			if in.IsNull() {
-				in.Skip()
-				out.W4 = nil
-			} else {
-				if out.W4 == nil {
-					out.W4 = new(Pivot)
-				}
-				if in.IsNull() {
-					in.Skip()
-				} else {
-					(*out.W4).UnmarshalEasyJSON(in)
-				}
-			}
-		case "w5":
-			if in.IsNull() {
-				in.Skip()
-				out.W5 = nil
-			} else {
-				if out.W5 == nil {
-					out.W5 = new(Pivot)
-				}
-				if in.IsNull() {
-					in.Skip()
-				} else {
-					(*out.W5).UnmarshalEasyJSON(in)
-				}
-			}
 		case "direction":
 			if in.IsNull() {
 				in.Skip()
@@ -127,31 +99,19 @@ func easyjson60d273c4DecodeWaveSightPkgModel(in *jlexer.Lexer, out *MotiveWave) 
 			} else {
 				out.ConfidenceScore = float64(in.Float64())
 			}
-		case "purple_box":
+		case "target_box":
 			if in.IsNull() {
 				in.Skip()
-				out.PurpleBox = nil
+				out.TargetBox = nil
 			} else {
-				if out.PurpleBox == nil {
-					out.PurpleBox = new(TargetBox)
+				if out.TargetBox == nil {
+					out.TargetBox = new(TargetBox)
 				}
 				if in.IsNull() {
 					in.Skip()
 				} else {
-					(*out.PurpleBox).UnmarshalEasyJSON(in)
+					(*out.TargetBox).UnmarshalEasyJSON(in)
 				}
-			}
-		case "is_diagonal":
-			if in.IsNull() {
-				in.Skip()
-			} else {
-				out.IsDiagonal = bool(in.Bool())
-			}
-		case "is_truncated":
-			if in.IsNull() {
-				in.Skip()
-			} else {
-				out.IsTruncated = bool(in.Bool())
 			}
 		default:
 			in.SkipRecursive()
@@ -163,7 +123,7 @@ func easyjson60d273c4DecodeWaveSightPkgModel(in *jlexer.Lexer, out *MotiveWave) 
 		in.Consumed()
 	}
 }
-func easyjson60d273c4EncodeWaveSightPkgModel(out *jwriter.Writer, in MotiveWave) {
+func easyjson67127156EncodeWaveSightPkgModel(out *jwriter.Writer, in IncompleteWave) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -204,24 +164,6 @@ func easyjson60d273c4EncodeWaveSightPkgModel(out *jwriter.Writer, in MotiveWave)
 		}
 	}
 	{
-		const prefix string = ",\"w4\":"
-		out.RawString(prefix)
-		if in.W4 == nil {
-			out.RawString("null")
-		} else {
-			(*in.W4).MarshalEasyJSON(out)
-		}
-	}
-	{
-		const prefix string = ",\"w5\":"
-		out.RawString(prefix)
-		if in.W5 == nil {
-			out.RawString("null")
-		} else {
-			(*in.W5).MarshalEasyJSON(out)
-		}
-	}
-	{
 		const prefix string = ",\"direction\":"
 		out.RawString(prefix)
 		out.String(string(in.Direction))
@@ -231,44 +173,34 @@ func easyjson60d273c4EncodeWaveSightPkgModel(out *jwriter.Writer, in MotiveWave)
 		out.RawString(prefix)
 		out.Float64(float64(in.ConfidenceScore))
 	}
-	if in.PurpleBox != nil {
-		const prefix string = ",\"purple_box\":"
+	if in.TargetBox != nil {
+		const prefix string = ",\"target_box\":"
 		out.RawString(prefix)
-		(*in.PurpleBox).MarshalEasyJSON(out)
-	}
-	{
-		const prefix string = ",\"is_diagonal\":"
-		out.RawString(prefix)
-		out.Bool(bool(in.IsDiagonal))
-	}
-	{
-		const prefix string = ",\"is_truncated\":"
-		out.RawString(prefix)
-		out.Bool(bool(in.IsTruncated))
+		(*in.TargetBox).MarshalEasyJSON(out)
 	}
 	out.RawByte('}')
 }
 
 // MarshalJSON supports json.Marshaler interface
-func (v MotiveWave) MarshalJSON() ([]byte, error) {
+func (v IncompleteWave) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjson60d273c4EncodeWaveSightPkgModel(&w, v)
+	easyjson67127156EncodeWaveSightPkgModel(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
-func (v MotiveWave) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjson60d273c4EncodeWaveSightPkgModel(w, v)
+func (v IncompleteWave) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjson67127156EncodeWaveSightPkgModel(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
-func (v *MotiveWave) UnmarshalJSON(data []byte) error {
+func (v *IncompleteWave) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjson60d273c4DecodeWaveSightPkgModel(&r, v)
+	easyjson67127156DecodeWaveSightPkgModel(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
-func (v *MotiveWave) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjson60d273c4DecodeWaveSightPkgModel(l, v)
+func (v *IncompleteWave) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjson67127156DecodeWaveSightPkgModel(l, v)
 }

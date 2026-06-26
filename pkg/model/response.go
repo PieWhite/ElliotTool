@@ -9,4 +9,5 @@ type AnalysisResponse struct {
 	Candles         []Candle         `json:"candles"`
 	MotiveWaves     []MotiveWave     `json:"motive_waves"`
 	CorrectiveWaves []CorrectiveWave `json:"corrective_waves"`
+	IncompleteWaves []IncompleteWave `json:"incomplete_waves"`
 }

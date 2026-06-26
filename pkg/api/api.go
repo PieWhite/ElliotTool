@@ -129,6 +129,7 @@ func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	pivots := zigzag.CalculateZigZag(candles, percentDeviation)
 	motiveWaves := elliott.MatchMotiveWaves(pivots)
 	correctiveWaves := elliott.MatchCorrectiveWaves(pivots)
+	incompleteWaves := elliott.MatchIncompleteWaves(pivots)
 
 	// Compile high-performance Response struct
 	resp := model.AnalysisResponse{
@@ -137,6 +138,7 @@ func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		Candles:         candles,
 		MotiveWaves:     motiveWaves,
 		CorrectiveWaves: correctiveWaves,
+		IncompleteWaves: incompleteWaves,
 	}
 
 	// Serialize with generated easyjson code

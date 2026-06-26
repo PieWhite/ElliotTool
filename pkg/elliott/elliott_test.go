@@ -1,0 +1,406 @@
+package elliott_test
+
+import (
+	"math"
+	"testing"
+
+	"WaveSight/pkg/elliott"
+	"WaveSight/pkg/model"
+)
+
+func TestMatchMotiveWaves(t *testing.T) {
+	tests := []struct {
+		name          string
+		pivots        []model.Pivot
+		expectedCount int
+		verify        func(t *testing.T, results []model.MotiveWave)
+	}{
+		{
+			name:          "Insufficient pivots (empty)",
+			pivots:        []model.Pivot{},
+			expectedCount: 0,
+		},
+		{
+			name: "Insufficient pivots (less than 6)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 10.0, Type: model.PivotLow},
+				{Time: 110, Price: 15.0, Type: model.PivotHigh},
+				{Time: 120, Price: 12.0, Type: model.PivotLow},
+				{Time: 130, Price: 25.0, Type: model.PivotHigh},
+				{Time: 140, Price: 20.0, Type: model.PivotLow},
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Textbook Bullish 5-Wave Sequence",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 200.0, Type: model.PivotHigh}, // W1 (len: 100)
+				{Time: 120, Price: 138.2, Type: model.PivotLow},  // W2 (retracement: 61.8%)
+				{Time: 130, Price: 300.0, Type: model.PivotHigh}, // W3 (len: 161.8, extension: 161.8%)
+				{Time: 140, Price: 220.0, Type: model.PivotLow},  // W4 (stays above W1 high of 200)
+				{Time: 150, Price: 343.6, Type: model.PivotHigh}, // W5 (len: 123.6, matches 61.8% of net 0-to-3 distance)
+			},
+			expectedCount: 1,
+			verify: func(t *testing.T, results []model.MotiveWave) {
+				mw := results[0]
+				if mw.Direction != "BULLISH" {
+					t.Errorf("expected direction BULLISH, got %q", mw.Direction)
+				}
+				if mw.Start.Price != 100.0 || mw.W1.Price != 200.0 || mw.W2.Price != 138.2 ||
+					mw.W3.Price != 300.0 || mw.W4.Price != 220.0 || mw.W5.Price != 343.6 {
+					t.Errorf("unexpected pivot values in matched MotiveWave: %+v", mw)
+				}
+				if mw.ConfidenceScore < 0.90 {
+					t.Errorf("expected high confidence score for textbook setup, got %f", mw.ConfidenceScore)
+				}
+				if mw.PurpleBox == nil {
+					t.Errorf("expected PurpleBox to be populated, got nil")
+					return
+				}
+				if math.Abs(mw.PurpleBox.MinPrice-355.92975) > 0.0001 {
+					t.Errorf("expected MinPrice ~355.92975, got %f", mw.PurpleBox.MinPrice)
+				}
+				if math.Abs(mw.PurpleBox.MaxPrice-366.77025) > 0.0001 {
+					t.Errorf("expected MaxPrice ~366.77025, got %f", mw.PurpleBox.MaxPrice)
+				}
+				if mw.PurpleBox.StartTime != 151 {
+					t.Errorf("expected StartTime 151, got %d", mw.PurpleBox.StartTime)
+				}
+				if mw.PurpleBox.EndTime != 159 {
+					t.Errorf("expected EndTime 159, got %d", mw.PurpleBox.EndTime)
+				}
+			},
+		},
+		{
+			name: "Invalid Wave 2 Retracement (breaks below Start)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 110.0, Type: model.PivotHigh}, // W1
+				{Time: 120, Price: 98.0, Type: model.PivotLow},   // W2 (invalid: below 100)
+				{Time: 130, Price: 120.0, Type: model.PivotHigh}, // W3
+				{Time: 140, Price: 112.0, Type: model.PivotLow},  // W4
+				{Time: 150, Price: 130.0, Type: model.PivotHigh}, // W5
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid Wave 3 Shortest",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 120.0, Type: model.PivotHigh}, // W1 (len: 20)
+				{Time: 120, Price: 110.0, Type: model.PivotLow},  // W2
+				{Time: 130, Price: 115.0, Type: model.PivotHigh}, // W3 (len: 5, shortest)
+				{Time: 140, Price: 112.0, Type: model.PivotLow},  // W4
+				{Time: 150, Price: 135.0, Type: model.PivotHigh}, // W5 (len: 23)
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid Wave 4 Overlap (below W1 high)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 110.0, Type: model.PivotHigh}, // W1
+				{Time: 120, Price: 102.0, Type: model.PivotLow},  // W2
+				{Time: 130, Price: 125.0, Type: model.PivotHigh}, // W3
+				{Time: 140, Price: 108.0, Type: model.PivotLow},  // W4 (invalid: overlaps with W1 territory [100-110], 108 <= 110)
+				{Time: 150, Price: 130.0, Type: model.PivotHigh}, // W5
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Textbook Bearish 5-Wave Sequence",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 300.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 200.0, Type: model.PivotLow},  // W1 (len: 100)
+				{Time: 120, Price: 261.8, Type: model.PivotHigh}, // W2 (retracement: 61.8%)
+				{Time: 130, Price: 100.0, Type: model.PivotLow},  // W3 (len: 161.8, extension: 161.8%)
+				{Time: 140, Price: 180.0, Type: model.PivotHigh}, // W4 (stays below W1 low of 200)
+				{Time: 150, Price: 56.4, Type: model.PivotLow},   // W5 (len: 123.6, matches 61.8% of net 0-to-3 distance)
+			},
+			expectedCount: 1,
+			verify: func(t *testing.T, results []model.MotiveWave) {
+				mw := results[0]
+				if mw.Direction != "BEARISH" {
+					t.Errorf("expected direction BEARISH, got %q", mw.Direction)
+				}
+				if mw.Start.Price != 300.0 || mw.W1.Price != 200.0 || mw.W2.Price != 261.8 ||
+					mw.W3.Price != 100.0 || mw.W4.Price != 180.0 || mw.W5.Price != 56.4 {
+					t.Errorf("unexpected pivot values in matched MotiveWave: %+v", mw)
+				}
+				if mw.ConfidenceScore < 0.90 {
+					t.Errorf("expected high confidence score for textbook setup, got %f", mw.ConfidenceScore)
+				}
+				if mw.PurpleBox == nil {
+					t.Errorf("expected PurpleBox to be populated, got nil")
+					return
+				}
+				if math.Abs(mw.PurpleBox.MinPrice-38.07025) > 0.0001 {
+					t.Errorf("expected MinPrice ~38.07025, got %f", mw.PurpleBox.MinPrice)
+				}
+				if math.Abs(mw.PurpleBox.MaxPrice-39.22975) > 0.0001 {
+					t.Errorf("expected MaxPrice ~39.22975, got %f", mw.PurpleBox.MaxPrice)
+				}
+				if mw.PurpleBox.StartTime != 151 {
+					t.Errorf("expected StartTime 151, got %d", mw.PurpleBox.StartTime)
+				}
+				if mw.PurpleBox.EndTime != 159 {
+					t.Errorf("expected EndTime 159, got %d", mw.PurpleBox.EndTime)
+				}
+			},
+		},
+		{
+			name: "Invalid Bearish Wave 2 Retracement (breaks above Start)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 90.0, Type: model.PivotLow},   // W1
+				{Time: 120, Price: 102.0, Type: model.PivotHigh}, // W2 (invalid: above 100)
+				{Time: 130, Price: 80.0, Type: model.PivotLow},   // W3
+				{Time: 140, Price: 88.0, Type: model.PivotHigh},  // W4
+				{Time: 150, Price: 70.0, Type: model.PivotLow},   // W5
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid Bearish Wave 3 Shortest",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 80.0, Type: model.PivotLow},   // W1 (len: 20)
+				{Time: 120, Price: 90.0, Type: model.PivotHigh},  // W2
+				{Time: 130, Price: 85.0, Type: model.PivotLow},   // W3 (len: 5, shortest)
+				{Time: 140, Price: 88.0, Type: model.PivotHigh},  // W4
+				{Time: 150, Price: 65.0, Type: model.PivotLow},   // W5 (len: 23)
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid Bearish Wave 4 Overlap (above W1 low)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 90.0, Type: model.PivotLow},   // W1
+				{Time: 120, Price: 98.0, Type: model.PivotHigh},  // W2
+				{Time: 130, Price: 75.0, Type: model.PivotLow},   // W3
+				{Time: 140, Price: 92.0, Type: model.PivotHigh},  // W4 (invalid: overlaps with W1 territory [90-100], 92 >= 90)
+				{Time: 150, Price: 70.0, Type: model.PivotLow},   // W5
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Perfect Fibonacci Bullish Setup (100% matches)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 200.0, Type: model.PivotHigh}, // W1 (len: 100)
+				{Time: 120, Price: 138.2, Type: model.PivotLow},  // W2 (retracement: 61.8%)
+				{Time: 130, Price: 300.0, Type: model.PivotHigh}, // W3 (len: 161.8, extension: 161.8%)
+				{Time: 140, Price: 220.0, Type: model.PivotLow},  // W4 (stays above W1 high of 200.0)
+				{Time: 150, Price: 343.6, Type: model.PivotHigh}, // W5 (len: 123.6, matches 61.8% of net 0-to-3 distance)
+			},
+			expectedCount: 1,
+			verify: func(t *testing.T, results []model.MotiveWave) {
+				mw := results[0]
+				if mw.ConfidenceScore < 0.95 {
+					t.Errorf("expected very high confidence score, got %f", mw.ConfidenceScore)
+				}
+			},
+		},
+		{
+			name: "Valid but Sloppy Setup (fails Fib filters)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 200.0, Type: model.PivotHigh}, // W1 (len: 100)
+				{Time: 120, Price: 170.0, Type: model.PivotLow},  // W2 (retraces 30%, valid but sloppy)
+				{Time: 130, Price: 280.0, Type: model.PivotHigh}, // W3 (len: 110, extension: 110%)
+				{Time: 140, Price: 210.0, Type: model.PivotLow},  // W4 (no overlap, valid)
+				{Time: 150, Price: 360.0, Type: model.PivotHigh}, // W5 (len: 150, valid)
+			},
+			expectedCount: 0, // Should be filtered out because it misses Fib targets (score is 0.0)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := elliott.MatchMotiveWaves(tt.pivots)
+			if len(results) != tt.expectedCount {
+				t.Fatalf("expected %d results, got %d", tt.expectedCount, len(results))
+			}
+			if tt.verify != nil {
+				tt.verify(t, results)
+			}
+		})
+	}
+}
+
+func BenchmarkMatchMotiveWaves(b *testing.B) {
+	// Construct a realistic list of pivots (e.g., alternating series of highs/lows)
+	pivots := make([]model.Pivot, 1000)
+	for i := 0; i < 1000; i++ {
+		t := model.PivotLow
+		price := 100.0 + float64(i%2)*10.0
+		if i%2 == 1 {
+			t = model.PivotHigh
+		}
+		pivots[i] = model.Pivot{
+			Time:  int64(i * 100),
+			Price: price,
+			Type:  t,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = elliott.MatchMotiveWaves(pivots)
+	}
+}
+
+func TestMatchCorrectiveWaves(t *testing.T) {
+	tests := []struct {
+		name          string
+		pivots        []model.Pivot
+		expectedCount int
+		verify        func(t *testing.T, results []model.CorrectiveWave)
+	}{
+		{
+			name:          "Insufficient pivots (empty)",
+			pivots:        []model.Pivot{},
+			expectedCount: 0,
+		},
+		{
+			name: "Insufficient pivots (less than 4)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 10.0, Type: model.PivotHigh},
+				{Time: 110, Price: 5.0, Type: model.PivotLow},
+				{Time: 120, Price: 8.0, Type: model.PivotHigh},
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Textbook Bearish ZigZag correction (correcting bullish impulse)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 50.0, Type: model.PivotLow},   // WA (length: 50)
+				{Time: 120, Price: 70.0, Type: model.PivotHigh},  // WB (retracement: 40% [20/50])
+				{Time: 130, Price: 20.0, Type: model.PivotLow},   // WC (length: 50 [100% of WA], cleanly breaks past 50.0)
+			},
+			expectedCount: 1,
+			verify: func(t *testing.T, results []model.CorrectiveWave) {
+				cw := results[0]
+				if cw.Direction != "BEARISH" {
+					t.Errorf("expected direction BEARISH, got %q", cw.Direction)
+				}
+				if cw.Type != "ZIGZAG" {
+					t.Errorf("expected type ZIGZAG, got %q", cw.Type)
+				}
+				if cw.Start.Price != 100.0 || cw.WA.Price != 50.0 || cw.WB.Price != 70.0 || cw.WC.Price != 20.0 {
+					t.Errorf("unexpected pivot values: %+v", cw)
+				}
+			},
+		},
+		{
+			name: "Textbook Bullish Flat correction (correcting bearish impulse)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 150.0, Type: model.PivotHigh}, // WA (length: 50)
+				{Time: 120, Price: 100.0, Type: model.PivotLow},  // WB (retracement: 100% [50/50])
+				{Time: 130, Price: 150.0, Type: model.PivotHigh}, // WC (length: 50 [100% of WA])
+			},
+			expectedCount: 1,
+			verify: func(t *testing.T, results []model.CorrectiveWave) {
+				cw := results[0]
+				if cw.Direction != "BULLISH" {
+					t.Errorf("expected direction BULLISH, got %q", cw.Direction)
+				}
+				if cw.Type != "FLAT" {
+					t.Errorf("expected type FLAT, got %q", cw.Type)
+				}
+				if cw.Start.Price != 100.0 || cw.WA.Price != 150.0 || cw.WB.Price != 100.0 || cw.WC.Price != 150.0 {
+					t.Errorf("unexpected pivot values: %+v", cw)
+				}
+			},
+		},
+		{
+			name: "Invalid corrective structure (Wave B retracing 150% of Wave A)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 50.0, Type: model.PivotLow},   // WA (length: 50)
+				{Time: 120, Price: 125.0, Type: model.PivotHigh}, // WB (retraces 150%)
+				{Time: 130, Price: 75.0, Type: model.PivotLow},   // WC
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid ZigZag Wave C fails to cleanly break past WA",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 50.0, Type: model.PivotLow},   // WA (length: 50)
+				{Time: 120, Price: 70.0, Type: model.PivotHigh},  // WB (retracement: 40% [20/50])
+				{Time: 130, Price: 51.0, Type: model.PivotLow},   // WC (terminates above WA of 50.0, no clean break)
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid ZigZag Wave C length too short (80% of WA)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotHigh}, // Start
+				{Time: 110, Price: 50.0, Type: model.PivotLow},   // WA (length: 50)
+				{Time: 120, Price: 70.0, Type: model.PivotHigh},  // WB (retracement: 40% [20/50])
+				{Time: 130, Price: 30.0, Type: model.PivotLow},   // WC (length: 40 [80% of WA], invalid)
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid Flat Wave B retraces too little (80%)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 150.0, Type: model.PivotHigh}, // WA (length: 50)
+				{Time: 120, Price: 110.0, Type: model.PivotLow},  // WB (retracement: 80% [40/50])
+				{Time: 130, Price: 150.0, Type: model.PivotHigh}, // WC (length: 40)
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Invalid Flat Wave C too long (140% of WA)",
+			pivots: []model.Pivot{
+				{Time: 100, Price: 100.0, Type: model.PivotLow},  // Start
+				{Time: 110, Price: 150.0, Type: model.PivotHigh}, // WA (length: 50)
+				{Time: 120, Price: 100.0, Type: model.PivotLow},  // WB (retracement: 100% [50/50])
+				{Time: 130, Price: 170.0, Type: model.PivotHigh}, // WC (length: 70 [140% of WA])
+			},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := elliott.MatchCorrectiveWaves(tt.pivots)
+			if len(results) != tt.expectedCount {
+				t.Fatalf("expected %d results, got %d", tt.expectedCount, len(results))
+			}
+			if tt.verify != nil {
+				tt.verify(t, results)
+			}
+		})
+	}
+}
+
+func BenchmarkMatchCorrectiveWaves(b *testing.B) {
+	// Construct a realistic list of pivots that does not trigger matches to test scanning loop overhead
+	pivots := make([]model.Pivot, 1000)
+	for i := 0; i < 1000; i++ {
+		t := model.PivotLow
+		price := float64(i * 10)
+		if i%2 == 1 {
+			t = model.PivotHigh
+		}
+		pivots[i] = model.Pivot{
+			Time:  int64(i * 100),
+			Price: price,
+			Type:  t,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = elliott.MatchCorrectiveWaves(pivots)
+	}
+}
+

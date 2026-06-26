@@ -1,0 +1,9 @@
+# Environment variables
+.env
+
+# Frontend build & dependencies
+frontend/node_modules
+frontend/dist
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local

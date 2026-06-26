@@ -313,15 +313,17 @@ const renderFlatWaves = () => {
     // Attach series markers using Lightweight Charts v5 createSeriesMarkers helper
     createSeriesMarkers(lineSeries, markers);
 
-    // Attach Purple Box TargetBox Primitive to Candlestick series if exists
-    if (wave.purple_box && candlestickSeries) {
-      const box = new BoxPrimitive(
-        wave.purple_box.start_time,
-        wave.purple_box.end_time,
-        wave.purple_box.min_price,
-        wave.purple_box.max_price
-      );
-      candlestickSeries.attachPrimitive(box);
+    // Attach all Purple Box TargetBox primitives to the candlestick series.
+    if (wave.purple_boxes && candlestickSeries) {
+      wave.purple_boxes.forEach(box => {
+        const primitive = new BoxPrimitive(
+          box.start_time,
+          box.end_time,
+          box.min_price,
+          box.max_price
+        );
+        candlestickSeries!.attachPrimitive(primitive);
+      });
     }
   });
 
@@ -405,6 +407,19 @@ const renderFlatWaves = () => {
     
     // Attach series markers using Lightweight Charts v5 createSeriesMarkers helper
     createSeriesMarkers(lineSeries, markers);
+
+    // Attach all corrective Purple Box TargetBox primitives to the candlestick series.
+    if (wave.purple_boxes && candlestickSeries) {
+      wave.purple_boxes.forEach(box => {
+        const primitive = new BoxPrimitive(
+          box.start_time,
+          box.end_time,
+          box.min_price,
+          box.max_price
+        );
+        candlestickSeries!.attachPrimitive(primitive);
+      });
+    }
   });
 
   // 7. Draw Incomplete (developing) 1-2-3 waves — Step 8

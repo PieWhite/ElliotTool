@@ -127,19 +127,32 @@ func easyjson60d273c4DecodeWaveSightPkgModel(in *jlexer.Lexer, out *MotiveWave) 
 			} else {
 				out.ConfidenceScore = float64(in.Float64())
 			}
-		case "purple_box":
+		case "purple_boxes":
 			if in.IsNull() {
 				in.Skip()
-				out.PurpleBox = nil
+				out.PurpleBoxes = nil
 			} else {
-				if out.PurpleBox == nil {
-					out.PurpleBox = new(TargetBox)
-				}
-				if in.IsNull() {
-					in.Skip()
+				in.Delim('[')
+				if out.PurpleBoxes == nil {
+					if !in.IsDelim(']') {
+						out.PurpleBoxes = make([]TargetBox, 0, 2)
+					} else {
+						out.PurpleBoxes = []TargetBox{}
+					}
 				} else {
-					(*out.PurpleBox).UnmarshalEasyJSON(in)
+					out.PurpleBoxes = (out.PurpleBoxes)[:0]
 				}
+				for !in.IsDelim(']') {
+					var v1 TargetBox
+					if in.IsNull() {
+						in.Skip()
+					} else {
+						(v1).UnmarshalEasyJSON(in)
+					}
+					out.PurpleBoxes = append(out.PurpleBoxes, v1)
+					in.WantComma()
+				}
+				in.Delim(']')
 			}
 		case "is_diagonal":
 			if in.IsNull() {
@@ -231,10 +244,19 @@ func easyjson60d273c4EncodeWaveSightPkgModel(out *jwriter.Writer, in MotiveWave)
 		out.RawString(prefix)
 		out.Float64(float64(in.ConfidenceScore))
 	}
-	if in.PurpleBox != nil {
-		const prefix string = ",\"purple_box\":"
+	if len(in.PurpleBoxes) != 0 {
+		const prefix string = ",\"purple_boxes\":"
 		out.RawString(prefix)
-		(*in.PurpleBox).MarshalEasyJSON(out)
+		{
+			out.RawByte('[')
+			for v2, v3 := range in.PurpleBoxes {
+				if v2 > 0 {
+					out.RawByte(',')
+				}
+				(v3).MarshalEasyJSON(out)
+			}
+			out.RawByte(']')
+		}
 	}
 	{
 		const prefix string = ",\"is_diagonal\":"

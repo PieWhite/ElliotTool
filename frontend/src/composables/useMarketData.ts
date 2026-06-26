@@ -31,7 +31,7 @@ export interface MotiveWave {
   w5: Pivot;
   direction: 'BULLISH' | 'BEARISH';
   confidence_score: number;
-  purple_box?: TargetBox;
+  purple_boxes?: TargetBox[];
   is_diagonal: boolean;   // Step 8: true if wave is a converging diagonal (wedge)
   is_truncated: boolean;  // Step 8: true if Wave 5 fails to exceed Wave 3
 }
@@ -46,6 +46,7 @@ export interface CorrectiveWave {
   wx?: Pivot;  // WXY X-wave connector pivot
   type: 'ZIGZAG' | 'FLAT' | 'TRIANGLE' | 'WXY';
   direction: 'BULLISH' | 'BEARISH';
+  purple_boxes?: TargetBox[];
 }
 
 // Step 8: Incomplete (developing) 1-2-3 structure with a predictive Wave 4 target box.

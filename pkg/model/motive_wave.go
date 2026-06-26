@@ -6,15 +6,15 @@ package model
 //
 //easyjson:json
 type MotiveWave struct {
-	Start     *Pivot `json:"start"`
-	W1        *Pivot `json:"w1"`
-	W2        *Pivot `json:"w2"`
-	W3        *Pivot `json:"w3"`
-	W4        *Pivot `json:"w4"`
-	W5              *Pivot     `json:"w5"`
-	Direction       string     `json:"direction"` // "BULLISH" or "BEARISH"
-	ConfidenceScore float64    `json:"confidence_score"`
-	PurpleBox       *TargetBox `json:"purple_box,omitempty"`
-	IsDiagonal      bool       `json:"is_diagonal"`
-	IsTruncated     bool       `json:"is_truncated"`
+	Start           *Pivot      `json:"start"`
+	W1              *Pivot      `json:"w1"`
+	W2              *Pivot      `json:"w2"`
+	W3              *Pivot      `json:"w3"`
+	W4              *Pivot      `json:"w4"`
+	W5              *Pivot      `json:"w5"`
+	Direction       string      `json:"direction"` // "BULLISH" or "BEARISH"
+	ConfidenceScore float64     `json:"confidence_score"`
+	PurpleBoxes     []TargetBox `json:"purple_boxes,omitempty"`
+	IsDiagonal      bool        `json:"is_diagonal"`
+	IsTruncated     bool        `json:"is_truncated"`
 }

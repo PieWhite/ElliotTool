@@ -68,12 +68,13 @@ func MatchCorrectiveWaves(pivots []model.Pivot) []model.CorrectiveWave {
 
 		if isPatternMatch {
 			correctiveWaves = append(correctiveWaves, model.CorrectiveWave{
-				Start:     p0,
-				WA:        p1,
-				WB:        p2,
-				WC:        p3,
-				Type:      correctiveType,
-				Direction: direction,
+				Start:       p0,
+				WA:          p1,
+				WB:          p2,
+				WC:          p3,
+				Type:        correctiveType,
+				Direction:   direction,
+				PurpleBoxes: calculateWaveCTargetBoxes(p0, p1, p2, p3),
 			})
 		}
 	}
@@ -299,14 +300,15 @@ func evaluateWXY(p0, p1, p2, p3, p4, p5, p6, p7 *model.Pivot) (model.CorrectiveW
 	}
 
 	return model.CorrectiveWave{
-		Start:     p0,
-		WA:        p1, // W-wave's A pivot
-		WB:        p2, // W-wave's B pivot
-		WC:        p3, // W-wave's C pivot (end of W-wave)
-		WX:        p4, // X-wave connector pivot
-		WD:        p5, // Y-wave's A pivot
-		WE:        p7, // Y-wave's C pivot (terminal endpoint of the Double Three)
-		Type:      "WXY",
-		Direction: direction,
+		Start:       p0,
+		WA:          p1, // W-wave's A pivot
+		WB:          p2, // W-wave's B pivot
+		WC:          p3, // W-wave's C pivot (end of W-wave)
+		WX:          p4, // X-wave connector pivot
+		WD:          p5, // Y-wave's A pivot
+		WE:          p7, // Y-wave's C pivot (terminal endpoint of the Double Three)
+		Type:        "WXY",
+		Direction:   direction,
+		PurpleBoxes: calculateWaveCTargetBoxes(p4, p5, p6, p7),
 	}, true
 }

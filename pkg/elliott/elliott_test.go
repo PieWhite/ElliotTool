@@ -54,21 +54,14 @@ func TestMatchMotiveWaves(t *testing.T) {
 				if mw.ConfidenceScore < 0.90 {
 					t.Errorf("expected high confidence score for textbook setup, got %f", mw.ConfidenceScore)
 				}
-				if mw.PurpleBox == nil {
-					t.Errorf("expected PurpleBox to be populated, got nil")
-					return
+				if len(mw.PurpleBoxes) != 3 {
+					t.Fatalf("expected 3 PurpleBoxes, got %d", len(mw.PurpleBoxes))
 				}
-				if math.Abs(mw.PurpleBox.MinPrice-355.92975) > 0.0001 {
-					t.Errorf("expected MinPrice ~355.92975, got %f", mw.PurpleBox.MinPrice)
-				}
-				if math.Abs(mw.PurpleBox.MaxPrice-366.77025) > 0.0001 {
-					t.Errorf("expected MaxPrice ~366.77025, got %f", mw.PurpleBox.MaxPrice)
-				}
-				if mw.PurpleBox.StartTime != 151 {
-					t.Errorf("expected StartTime 151, got %d", mw.PurpleBox.StartTime)
-				}
-				if mw.PurpleBox.EndTime != 159 {
-					t.Errorf("expected EndTime 159, got %d", mw.PurpleBox.EndTime)
+				assertTargetBox(t, mw.PurpleBoxes[0], 320.0, 151, 159)
+				assertTargetBox(t, mw.PurpleBoxes[1], 343.6, 151, 159)
+				assertTargetBox(t, mw.PurpleBoxes[2], 381.8, 151, 159)
+				if mw.W5.Price < mw.PurpleBoxes[1].MinPrice || mw.W5.Price > mw.PurpleBoxes[1].MaxPrice {
+					t.Errorf("expected Wave 5 peak to land inside the 61.8%% net target box")
 				}
 			},
 		},
@@ -131,21 +124,14 @@ func TestMatchMotiveWaves(t *testing.T) {
 				if mw.ConfidenceScore < 0.90 {
 					t.Errorf("expected high confidence score for textbook setup, got %f", mw.ConfidenceScore)
 				}
-				if mw.PurpleBox == nil {
-					t.Errorf("expected PurpleBox to be populated, got nil")
-					return
+				if len(mw.PurpleBoxes) != 3 {
+					t.Fatalf("expected 3 PurpleBoxes, got %d", len(mw.PurpleBoxes))
 				}
-				if math.Abs(mw.PurpleBox.MinPrice-38.07025) > 0.0001 {
-					t.Errorf("expected MinPrice ~38.07025, got %f", mw.PurpleBox.MinPrice)
-				}
-				if math.Abs(mw.PurpleBox.MaxPrice-39.22975) > 0.0001 {
-					t.Errorf("expected MaxPrice ~39.22975, got %f", mw.PurpleBox.MaxPrice)
-				}
-				if mw.PurpleBox.StartTime != 151 {
-					t.Errorf("expected StartTime 151, got %d", mw.PurpleBox.StartTime)
-				}
-				if mw.PurpleBox.EndTime != 159 {
-					t.Errorf("expected EndTime 159, got %d", mw.PurpleBox.EndTime)
+				assertTargetBox(t, mw.PurpleBoxes[0], 80.0, 151, 159)
+				assertTargetBox(t, mw.PurpleBoxes[1], 56.4, 151, 159)
+				assertTargetBox(t, mw.PurpleBoxes[2], 18.2, 151, 159)
+				if mw.W5.Price < mw.PurpleBoxes[1].MinPrice || mw.W5.Price > mw.PurpleBoxes[1].MaxPrice {
+					t.Errorf("expected Wave 5 low to land inside the 61.8%% net target box")
 				}
 			},
 		},
@@ -302,6 +288,31 @@ func TestMatchMotiveWaves(t *testing.T) {
 	}
 }
 
+func TestMotiveWavePurpleBoxMatrix(t *testing.T) {
+	pivots := []model.Pivot{
+		{Time: 100, Price: 100.0, Type: model.PivotLow},
+		{Time: 110, Price: 200.0, Type: model.PivotHigh},
+		{Time: 120, Price: 138.2, Type: model.PivotLow},
+		{Time: 130, Price: 300.0, Type: model.PivotHigh},
+		{Time: 140, Price: 220.0, Type: model.PivotLow},
+		{Time: 150, Price: 343.6, Type: model.PivotHigh},
+	}
+
+	results := elliott.MatchMotiveWaves(pivots)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 motive wave, got %d", len(results))
+	}
+
+	boxes := results[0].PurpleBoxes
+	if len(boxes) != 3 {
+		t.Fatalf("expected exactly 3 PurpleBoxes, got %d", len(boxes))
+	}
+
+	assertTargetBox(t, boxes[0], 320.0, 151, 159) // Wave 5 = 100% of Wave 1 from Wave 4.
+	assertTargetBox(t, boxes[1], 343.6, 151, 159) // Wave 5 = 61.8% of net 0->3 from Wave 4.
+	assertTargetBox(t, boxes[2], 381.8, 151, 159) // Wave 5 = 161.8% of Wave 1 from Wave 4.
+}
+
 func BenchmarkMatchMotiveWaves(b *testing.B) {
 	// Construct a realistic list of pivots (e.g., alternating series of highs/lows)
 	pivots := make([]model.Pivot, 1000)
@@ -454,6 +465,33 @@ func TestMatchCorrectiveWaves(t *testing.T) {
 	}
 }
 
+func TestCorrectiveWavePurpleBoxMatrix(t *testing.T) {
+	pivots := []model.Pivot{
+		{Time: 100, Price: 300.0, Type: model.PivotHigh},
+		{Time: 110, Price: 200.0, Type: model.PivotLow},
+		{Time: 120, Price: 240.0, Type: model.PivotHigh},
+		{Time: 130, Price: 140.0, Type: model.PivotLow},
+	}
+
+	results := elliott.MatchCorrectiveWaves(pivots)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 corrective wave, got %d", len(results))
+	}
+
+	cw := results[0]
+	if cw.Type != "ZIGZAG" || cw.Direction != "BEARISH" {
+		t.Fatalf("expected bearish ZIGZAG, got %s %s", cw.Direction, cw.Type)
+	}
+
+	boxes := cw.PurpleBoxes
+	if len(boxes) != 2 {
+		t.Fatalf("expected exactly 2 PurpleBoxes, got %d", len(boxes))
+	}
+
+	assertTargetBox(t, boxes[0], 140.0, 131, 139) // Wave C = 100% of Wave A from Wave B.
+	assertTargetBox(t, boxes[1], 78.2, 131, 139)  // Wave C = 161.8% of Wave A from Wave B.
+}
+
 func BenchmarkMatchCorrectiveWaves(b *testing.B) {
 	// Construct a realistic list of pivots that does not trigger matches to test scanning loop overhead
 	pivots := make([]model.Pivot, 1000)
@@ -473,6 +511,29 @@ func BenchmarkMatchCorrectiveWaves(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = elliott.MatchCorrectiveWaves(pivots)
+	}
+}
+
+func assertTargetBox(t *testing.T, box model.TargetBox, targetPrice float64, startTime, endTime int64) {
+	t.Helper()
+
+	expectedMin := targetPrice * 0.985
+	expectedMax := targetPrice * 1.015
+	if expectedMax < expectedMin {
+		expectedMin, expectedMax = expectedMax, expectedMin
+	}
+
+	if math.Abs(box.MinPrice-expectedMin) > 0.0001 {
+		t.Errorf("expected MinPrice %f, got %f", expectedMin, box.MinPrice)
+	}
+	if math.Abs(box.MaxPrice-expectedMax) > 0.0001 {
+		t.Errorf("expected MaxPrice %f, got %f", expectedMax, box.MaxPrice)
+	}
+	if box.StartTime != startTime {
+		t.Errorf("expected StartTime %d, got %d", startTime, box.StartTime)
+	}
+	if box.EndTime != endTime {
+		t.Errorf("expected EndTime %d, got %d", endTime, box.EndTime)
 	}
 }
 
@@ -709,10 +770,10 @@ func TestMatchTriangles(t *testing.T) {
 
 func TestMatchWXYDoubleThree(t *testing.T) {
 	tests := []struct {
-		name     string
-		pivots   []model.Pivot
-		wantWXY  int
-		verify   func(t *testing.T, results []model.CorrectiveWave)
+		name    string
+		pivots  []model.Pivot
+		wantWXY int
+		verify  func(t *testing.T, results []model.CorrectiveWave)
 	}{
 		{
 			name:    "Insufficient pivots (fewer than 8)",

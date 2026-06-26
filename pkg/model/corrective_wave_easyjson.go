@@ -141,6 +141,33 @@ func easyjsonB04a0c2DecodeWaveSightPkgModel(in *jlexer.Lexer, out *CorrectiveWav
 			} else {
 				out.Direction = string(in.String())
 			}
+		case "purple_boxes":
+			if in.IsNull() {
+				in.Skip()
+				out.PurpleBoxes = nil
+			} else {
+				in.Delim('[')
+				if out.PurpleBoxes == nil {
+					if !in.IsDelim(']') {
+						out.PurpleBoxes = make([]TargetBox, 0, 2)
+					} else {
+						out.PurpleBoxes = []TargetBox{}
+					}
+				} else {
+					out.PurpleBoxes = (out.PurpleBoxes)[:0]
+				}
+				for !in.IsDelim(']') {
+					var v1 TargetBox
+					if in.IsNull() {
+						in.Skip()
+					} else {
+						(v1).UnmarshalEasyJSON(in)
+					}
+					out.PurpleBoxes = append(out.PurpleBoxes, v1)
+					in.WantComma()
+				}
+				in.Delim(']')
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -215,6 +242,20 @@ func easyjsonB04a0c2EncodeWaveSightPkgModel(out *jwriter.Writer, in CorrectiveWa
 		const prefix string = ",\"direction\":"
 		out.RawString(prefix)
 		out.String(string(in.Direction))
+	}
+	if len(in.PurpleBoxes) != 0 {
+		const prefix string = ",\"purple_boxes\":"
+		out.RawString(prefix)
+		{
+			out.RawByte('[')
+			for v2, v3 := range in.PurpleBoxes {
+				if v2 > 0 {
+					out.RawByte(',')
+				}
+				(v3).MarshalEasyJSON(out)
+			}
+			out.RawByte(']')
+		}
 	}
 	out.RawByte('}')
 }

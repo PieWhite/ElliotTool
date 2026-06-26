@@ -119,15 +119,10 @@ func motiveToStructure(mw model.MotiveWave) model.WaveStructure {
 		pivots = append(pivots, *mw.W5)
 	}
 
-	var boxes []model.TargetBox
-	if mw.PurpleBox != nil {
-		boxes = []model.TargetBox{*mw.PurpleBox}
-	}
-
 	return model.WaveStructure{
 		Type:            typeName,
 		Pivots:          pivots,
-		PurpleBoxes:     boxes,
+		PurpleBoxes:     append([]model.TargetBox(nil), mw.PurpleBoxes...),
 		ConfidenceScore: mw.ConfidenceScore,
 	}
 }
@@ -167,7 +162,7 @@ func correctiveToStructure(cw model.CorrectiveWave) model.WaveStructure {
 	return model.WaveStructure{
 		Type:            typeName,
 		Pivots:          pivots,
-		PurpleBoxes:     nil,
+		PurpleBoxes:     append([]model.TargetBox(nil), cw.PurpleBoxes...),
 		ConfidenceScore: correctiveBaseScore,
 	}
 }

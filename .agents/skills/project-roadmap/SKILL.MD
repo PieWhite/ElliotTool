@@ -48,17 +48,22 @@
 - **UI Toggle (`App.vue`):** Added a 5-column grid with a **Scenario View** toggle column containing ▲ BULLISH / ▼ BEARISH buttons. Active BULLISH = green border/bg, active BEARISH = red border/bg. Confidence badge shows % for each scenario dynamically.
 - **Chart Rendering (`ChartWidget.vue`):** Accepts optional `activeScenario?: AnalysisScenario` prop. When provided, `renderScenarioStructures` renders each `WaveStructure`'s pivot sequence as a colour-coded line (motive = green/red solid, corrective = amber/teal/indigo dashed, incomplete = cyan dotted) and attaches `purple_boxes`. Falls back to legacy flat array rendering when no scenario is active. Watch list includes `activeScenario` so toggling immediately redraws.
 
-### [ ] Step 11: Comprehensive Purple Box Matrix (Target Zones)
+### [x] Step 11: Comprehensive Purple Box Matrix (Target Zones)
 - **Objective:** Calculate dynamic Purple Boxes for *every* developing wave based on the uploaded `WaveRatios.pdf`.
-- **Wave 3 Targets:** Box at 1.618, 2.618, or 4.236 extension of Wave 1.
+- **Wave 3 Targets:** Added `calculateWave3TargetBoxes` for 1.618, 2.618, and 4.236 extensions of Wave 1.
 - **Wave 4 Targets:** Box at 38.2% retracement of Wave 3, terminating within the territory of the preceding 4th wave of one lesser degree.
-- **Wave C Targets:** Box at 100% or 161.8% of Wave A.
-- Ensure the backend calculates these boxes for both completed and *in-progress* structures.
+- **Wave 5 Targets:** Completed motive waves now emit `purple_boxes` with three F&P target zones: 100% of Wave 1, 61.8% of net Start-to-Wave-3, and 161.8% of Wave 1.
+- **Wave C Targets:** Corrective ABC/WXY structures now emit `purple_boxes` at 100% and 161.8% of Wave A.
+- **Domain Model:** `MotiveWave.PurpleBox` replaced with `MotiveWave.PurpleBoxes []TargetBox`; `CorrectiveWave` gains `PurpleBoxes []TargetBox`. `motive_wave_easyjson.go` and `corrective_wave_easyjson.go` regenerated.
+- **Scorer:** Scenario `WaveStructure.PurpleBoxes` now receives all motive/corrective target boxes.
+- **Frontend:** TypeScript contracts use `purple_boxes`; `ChartWidget.vue` renders every motive, corrective, and scenario target box as a separate `BoxPrimitive`.
+- **TDD:** Added matrix coverage for textbook bullish motive Wave 5 targets and textbook bearish ZigZag Wave C targets. `go test ./pkg/elliott/... -v` passes.
 
 ### [ ] Step 12: Multi-Degree Fractal Validation (Waves within Waves)
 - **Objective:** Apply the fractal nature of Elliott Wave.
 - **Logic:** A macro Wave 1 on a 1D chart is only valid if the `elliott` package can break it down into a smaller 5-wave motive structure on the 1H chart.
 - **Implementation:** Run the scanners concurrently over multiple timeframes and cross-reference pivot alignment.
+- **Next Task Details:** Design a multi-timeframe validation layer that accepts parent timeframe pivots plus child timeframe pivots, runs motive/corrective/incomplete scanners concurrently, and boosts or rejects macro structures based on whether their major legs contain valid lower-degree substructures with aligned start/end times.
 
 ---
 

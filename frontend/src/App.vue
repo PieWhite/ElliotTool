@@ -268,18 +268,18 @@
               </div>
               
               <!-- Purple Box Target Box Coordinates -->
-              <div v-if="wave.purple_box" class="mt-2.5 pt-2 border-t border-gray-800/80">
+              <div v-if="wave.purple_boxes?.length" class="mt-2.5 pt-2 border-t border-gray-800/80">
                 <div class="flex items-center gap-1.5 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
                   <span class="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
-                  Target Box (Purple Box)
+                  Target Boxes (Purple Box)
                 </div>
-                <div class="mt-1 text-[11px] grid grid-cols-2 text-gray-500 font-mono leading-tight">
-                  <div>Min Price:</div>
-                  <div class="text-right text-gray-300">${{ formatPrice(wave.purple_box.min_price) }}</div>
-                  <div>Max Price:</div>
-                  <div class="text-right text-gray-300">${{ formatPrice(wave.purple_box.max_price) }}</div>
+                <div v-for="(box, boxIndex) in wave.purple_boxes" :key="'motive-box-' + index + '-' + boxIndex" class="mt-1 text-[11px] grid grid-cols-2 text-gray-500 font-mono leading-tight">
+                  <div>Zone {{ boxIndex + 1 }} Min:</div>
+                  <div class="text-right text-gray-300">${{ formatPrice(box.min_price) }}</div>
+                  <div>Zone {{ boxIndex + 1 }} Max:</div>
+                  <div class="text-right text-gray-300">${{ formatPrice(box.max_price) }}</div>
                   <div>Target window:</div>
-                  <div class="text-right text-gray-400 text-[9px]">{{ formatDate(wave.purple_box.start_time) }} - {{ formatDate(wave.purple_box.end_time) }}</div>
+                  <div class="text-right text-gray-400 text-[9px]">{{ formatDate(box.start_time) }} - {{ formatDate(box.end_time) }}</div>
                 </div>
               </div>
             </div>

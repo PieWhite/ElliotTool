@@ -101,7 +101,7 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 				W5:              p5,
 				Direction:       "BULLISH",
 				ConfidenceScore: score,
-				PurpleBox:       calculateTargetBox(p0, p1, p2, p3, p4, p5),
+				PurpleBoxes:     calculateTargetBox(p0, p1, p2, p3, p4, p5),
 				IsDiagonal:      isDiagonal,
 				IsTruncated:     isTruncated,
 			})
@@ -177,7 +177,7 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 				W5:              p5,
 				Direction:       "BEARISH",
 				ConfidenceScore: score,
-				PurpleBox:       calculateTargetBox(p0, p1, p2, p3, p4, p5),
+				PurpleBoxes:     calculateTargetBox(p0, p1, p2, p3, p4, p5),
 				IsDiagonal:      isDiagonal,
 				IsTruncated:     isTruncated,
 			})
@@ -286,53 +286,102 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 	return (score2 + score3 + score5) / 3.0
 }
 
-// calculateTargetBox calculates the trend channeling coordinates and Fibonacci time extensions.
-func calculateTargetBox(p0, p1, p2, p3, p4, p5 *model.Pivot) *model.TargetBox {
-	// Baseline (Wave 2 to Wave 4)
-	x2 := float64(p2.Time)
-	y2 := p2.Price
-	x4 := float64(p4.Time)
-	y4 := p4.Price
-
-	if x4 == x2 {
+// calculateTargetBox calculates the three standard F&P Wave 5 Fibonacci target zones:
+// 100% of Wave 1, 61.8% of net distance from Start to Wave 3, and 161.8% of Wave 1.
+func calculateTargetBox(p0, p1, p2, p3, p4, p5 *model.Pivot) []model.TargetBox {
+	len1 := math.Abs(p1.Price - p0.Price)
+	net0to3 := math.Abs(p3.Price - p0.Price)
+	if len1 == 0 || net0to3 == 0 {
 		return nil
 	}
 
-	m := (y4 - y2) / (x4 - x2)
+	direction := waveDirection(p0, p1)
+	startTime, endTime := targetTimeWindow(p4.Time, p3.Time-p0.Time)
 
-	// Parallel Boundary through Wave 3 (p3)
-	x3 := float64(p3.Time)
-	y3 := p3.Price
-	b3 := y3 - m*x3
+	return targetBoxesFromOrigin(p4.Price, direction, startTime, endTime, []float64{
+		len1,
+		net0to3 * 0.618,
+		len1 * 1.618,
+	})
+}
 
-	// Midpoint of Wave 5 (starts at p4, ends at p5)
-	x5 := float64(p5.Time)
-	xMid := (x4 + x5) / 2.0
-
-	// Projected price on the parallel boundary at Wave 5 midpoint
-	yProj := m*xMid + b3
-
-	// Strict +/- 1.5% buffer
-	val1 := yProj * 0.985
-	val2 := yProj * 1.015
-	minPrice := val1
-	maxPrice := val2
-	if val2 < val1 {
-		minPrice = val2
-		maxPrice = val1
+// calculateWave3TargetBoxes projects Wave 3 target zones at 1.618x, 2.618x, and 4.236x of Wave 1.
+func calculateWave3TargetBoxes(p0, p1, p2, p3 *model.Pivot) []model.TargetBox {
+	len1 := math.Abs(p1.Price - p0.Price)
+	if len1 == 0 {
+		return nil
 	}
 
-	// Fibonacci Time Extensions (X-Axis)
-	deltaT := float64(p3.Time - p0.Time)
-	startTime := float64(p4.Time) + (deltaT * 0.382)
-	endTime := float64(p4.Time) + (deltaT * 0.618)
+	direction := waveDirection(p0, p1)
+	startTime, endTime := targetTimeWindow(p2.Time, p3.Time-p0.Time)
 
-	return &model.TargetBox{
-		MinPrice:  minPrice,
-		MaxPrice:  maxPrice,
-		StartTime: int64(math.Round(startTime)),
-		EndTime:   int64(math.Round(endTime)),
+	return targetBoxesFromOrigin(p2.Price, direction, startTime, endTime, []float64{
+		len1 * 1.618,
+		len1 * 2.618,
+		len1 * 4.236,
+	})
+}
+
+// calculateWaveCTargetBoxes projects Wave C target zones at 100% and 161.8% of Wave A.
+func calculateWaveCTargetBoxes(p0, p1, p2, p3 *model.Pivot) []model.TargetBox {
+	lenA := math.Abs(p1.Price - p0.Price)
+	if lenA == 0 {
+		return nil
 	}
+
+	direction := waveDirection(p0, p1)
+	startTime, endTime := targetTimeWindow(p2.Time, p3.Time-p0.Time)
+
+	return targetBoxesFromOrigin(p2.Price, direction, startTime, endTime, []float64{
+		lenA,
+		lenA * 1.618,
+	})
+}
+
+func waveDirection(p0, p1 *model.Pivot) string {
+	if p1.Price >= p0.Price {
+		return "BULLISH"
+	}
+	return "BEARISH"
+}
+
+func targetTimeWindow(originTime int64, deltaT int64) (int64, int64) {
+	delta := float64(deltaT)
+	if delta <= 0 {
+		delta = 600
+	}
+
+	startTime := float64(originTime) + (delta * 0.382)
+	endTime := float64(originTime) + (delta * 0.618)
+	return int64(math.Round(startTime)), int64(math.Round(endTime))
+}
+
+func targetBoxesFromOrigin(originPrice float64, direction string, startTime, endTime int64, distances []float64) []model.TargetBox {
+	boxes := make([]model.TargetBox, 0, len(distances))
+	for _, distance := range distances {
+		targetPrice := originPrice + distance
+		if direction == "BEARISH" {
+			targetPrice = originPrice - distance
+		}
+
+		val1 := targetPrice * 0.985
+		val2 := targetPrice * 1.015
+		minPrice := val1
+		maxPrice := val2
+		if val2 < val1 {
+			minPrice = val2
+			maxPrice = val1
+		}
+
+		boxes = append(boxes, model.TargetBox{
+			MinPrice:  minPrice,
+			MaxPrice:  maxPrice,
+			StartTime: startTime,
+			EndTime:   endTime,
+		})
+	}
+
+	return boxes
 }
 
 // MatchIncompleteWaves scans a slice of pivots for verified developing 1-2-3 Elliott Wave structures.
@@ -517,4 +566,3 @@ func calculateWave4TargetBox(p0, p1, p2, p3 *model.Pivot, direction string) *mod
 		EndTime:   int64(math.Round(endTime)),
 	}
 }
-

@@ -124,7 +124,7 @@ Corrective waves bewegen áltijd tegen de richting van de grotere trend van éé
   }
   ```
 
-### [ ] Stap 3: Visualisatie & Future Purple Boxes Rendering (`frontend/src/components/ChartWidget.vue` & `BoxPrimitive.ts`)
+### [x] Stap 3: Visualisatie & Future Purple Boxes Rendering (`frontend/src/components/ChartWidget.vue` & `BoxPrimitive.ts`)
 - **Probleem 1 (Visualisatie):** Doordat geneste child-golven direct over de segmenten van hun parent-golven heen worden getekend, ontstaat er een optische verwarring waarbij de lijnen in elkaar overlopen. We willen ze visueel scheiden.
 - **Probleem 2 (Purple Boxes):** Prognose-rechthoeken (Purple Boxes/Target Boxes) die in de toekomst liggen worden momenteel niet getekend. Dit komt doordat `timeScale.timeToCoordinate(time)` `null` retourneert voor tijdstippen in de toekomst waar nog geen kaarsen (candles) voor bestaan.
 - **Oplossing:**

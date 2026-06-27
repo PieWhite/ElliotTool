@@ -88,6 +88,7 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
   private _endTime: number;
   private _minPrice: number;
   private _maxPrice: number;
+  private _candles: any[];
   // Theming: defaults to purple for motive wave target boxes.
   private _fillColor: string;
   private _strokeColor: string;
@@ -97,6 +98,7 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
     endTime: number,
     minPrice: number,
     maxPrice: number,
+    candles: any[],
     fillColor = 'rgba(147, 51, 234, 0.15)',
     strokeColor = 'rgba(168, 85, 247, 0.70)',
   ) {
@@ -104,6 +106,7 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
     this._endTime = endTime;
     this._minPrice = minPrice;
     this._maxPrice = maxPrice;
+    this._candles = candles || [];
     this._fillColor = fillColor;
     this._strokeColor = strokeColor;
     this._paneViews = [new BoxPaneView(this)];
@@ -123,14 +126,46 @@ export class BoxPrimitive implements ISeriesPrimitive<Time> {
     return this._paneViews;
   }
 
+  private _timeToCoordinate(time: number): number | null {
+    if (!this._chart) return null;
+    const timeScale = this._chart.timeScale();
+    const coordinate = timeScale.timeToCoordinate(time as Time);
+    if (coordinate !== null) {
+      return coordinate;
+    }
+
+    // Extrapolate coordinate if time is in the future
+    if (this._candles.length < 2) {
+      return null;
+    }
+
+    const lastCandle = this._candles[this._candles.length - 1];
+    const prevCandle = this._candles[this._candles.length - 2];
+
+    const lastX = timeScale.timeToCoordinate(lastCandle.time as Time);
+    const prevX = timeScale.timeToCoordinate(prevCandle.time as Time);
+
+    if (lastX === null || prevX === null) {
+      return null;
+    }
+
+    const stepX = lastX - prevX;
+    const stepTime = lastCandle.time - prevCandle.time;
+    if (stepTime <= 0) {
+      return null;
+    }
+
+    const deltaTime = time - lastCandle.time;
+    return lastX + (stepX / stepTime) * deltaTime;
+  }
+
   getRenderer(): IPrimitivePaneRenderer {
     if (!this._chart || !this._series) {
       return new BoxRenderer(null, null, null, null, this._fillColor, this._strokeColor);
     }
 
-    const timeScale = this._chart.timeScale();
-    const x1 = timeScale.timeToCoordinate(this._startTime as Time);
-    const x2 = timeScale.timeToCoordinate(this._endTime as Time);
+    const x1 = this._timeToCoordinate(this._startTime);
+    const x2 = this._timeToCoordinate(this._endTime);
     const y1 = this._series.priceToCoordinate(this._minPrice);
     const y2 = this._series.priceToCoordinate(this._maxPrice);
 

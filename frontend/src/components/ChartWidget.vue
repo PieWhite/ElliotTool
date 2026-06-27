@@ -105,17 +105,22 @@ function formatLabel(text: string, degree?: string): string {
   return text;
 }
 
-function getDegreeColor(degree: string | undefined, defaultColor: string): string {
-  if (!degree) return defaultColor;
-  const d = degree.toUpperCase();
-  switch (d) {
-    case 'PRIMARY': return '#a855f7';      // Purple
-    case 'INTERMEDIATE': return '#f43f5e'; // Rose/Pink
-    case 'MINUTE': return '#06b6d4';       // Cyan
-    case 'MINUETTE': return '#10b981';     // Emerald
-    case 'SUBMINUETTE': return '#818cf8';  // Indigo
-    default: return defaultColor;
+function getDegreeColor(degree: string | undefined, defaultColor: string, isChild = false): string {
+  let color = defaultColor;
+  if (degree) {
+    const d = degree.toUpperCase();
+    switch (d) {
+      case 'PRIMARY': color = '#a855f7'; break;      // Purple
+      case 'INTERMEDIATE': color = '#f43f5e'; break; // Rose/Pink
+      case 'MINUTE': color = '#06b6d4'; break;       // Cyan
+      case 'MINUETTE': color = '#10b981'; break;     // Emerald
+      case 'SUBMINUETTE': color = '#818cf8'; break;  // Indigo
+    }
   }
+  if (isChild) {
+    return color + 'a6'; // 65% opacity for nested child waves
+  }
+  return color;
 }
 
 type ScenarioStructureDirection = 'BULLISH' | 'BEARISH';
@@ -149,7 +154,7 @@ function getStructureDirection(ws: WaveStructure, scenarioBias: ScenarioStructur
   return scenarioBias;
 }
 
-function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStructureDirection): ScenarioRenderConfig {
+function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStructureDirection, isChild = false): ScenarioRenderConfig {
   const direction = getStructureDirection(ws, scenarioBias);
   const directionalColor = direction === 'BULLISH' ? '#22c55e' : '#ef4444';
   const directionalBox = direction === 'BULLISH'
@@ -160,7 +165,7 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
     return {
       defaultColor: '#22d3ee',
       lineStyle: LineStyle.Dotted,
-      lineWidth: 3,
+      lineWidth: isChild ? 1 : 3,
       boxFillColor: 'rgba(20, 184, 166, 0.16)',
       boxStrokeColor: 'rgba(45, 212, 191, 0.82)',
     };
@@ -170,7 +175,7 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
     return {
       defaultColor: directionalColor,
       lineStyle: LineStyle.Dashed,
-      lineWidth: 3,
+      lineWidth: isChild ? 1 : 3,
       boxFillColor: directionalBox.fill,
       boxStrokeColor: directionalBox.stroke,
     };
@@ -179,8 +184,8 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
   if (ws.type.startsWith('MOTIVE_')) {
     return {
       defaultColor: directionalColor,
-      lineStyle: LineStyle.Solid,
-      lineWidth: 3,
+      lineStyle: isChild ? LineStyle.Dashed : LineStyle.Solid,
+      lineWidth: isChild ? 1 : 3,
       boxFillColor: directionalBox.fill,
       boxStrokeColor: directionalBox.stroke,
     };
@@ -190,7 +195,7 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
     return {
       defaultColor: '#2dd4bf',
       lineStyle: LineStyle.Dashed,
-      lineWidth: 2,
+      lineWidth: isChild ? 1 : 2,
       boxFillColor: directionalBox.fill,
       boxStrokeColor: directionalBox.stroke,
     };
@@ -200,7 +205,7 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
     return {
       defaultColor: '#818cf8',
       lineStyle: LineStyle.Dashed,
-      lineWidth: 2,
+      lineWidth: isChild ? 1 : 2,
       boxFillColor: directionalBox.fill,
       boxStrokeColor: directionalBox.stroke,
     };
@@ -209,7 +214,7 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
   return {
     defaultColor: '#f59e0b',
     lineStyle: LineStyle.Dashed,
-    lineWidth: 2,
+    lineWidth: isChild ? 1 : 2,
     boxFillColor: directionalBox.fill,
     boxStrokeColor: directionalBox.stroke,
   };
@@ -412,11 +417,11 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
     priceOffsetStep: getScenarioPriceOffsetStep(scenario),
   };
 
-  const drawStructure = (ws: WaveStructure) => {
+  const drawStructure = (ws: WaveStructure, isChild = false) => {
     if (!ws.pivots || ws.pivots.length < 2) return;
 
-    const renderConfig = getScenarioRenderConfig(ws, scenarioBias);
-    const color = getDegreeColor(ws.degree, renderConfig.defaultColor);
+    const renderConfig = getScenarioRenderConfig(ws, scenarioBias, isChild);
+    const color = getDegreeColor(ws.degree, renderConfig.defaultColor, isChild);
 
     const lineSeries = chart!.addSeries(LineSeries, {
       color,
@@ -456,6 +461,7 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
           box.end_time,
           box.min_price,
           box.max_price,
+          props.candles,
           renderConfig.boxFillColor,
           renderConfig.boxStrokeColor,
         );
@@ -465,11 +471,11 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
 
     // Recursively draw sub-structures
     if (ws.sub_structures && ws.sub_structures.length > 0) {
-      ws.sub_structures.forEach(drawStructure);
+      ws.sub_structures.forEach(sub => drawStructure(sub, true));
     }
   };
 
-  scenario.structures.forEach(drawStructure);
+  scenario.structures.forEach(ws => drawStructure(ws, false));
 
   // Auto-fit candles to view
   chart?.timeScale().fitContent();
@@ -584,7 +590,8 @@ const renderFlatWaves = () => {
           box.start_time,
           box.end_time,
           box.min_price,
-          box.max_price
+          box.max_price,
+          props.candles
         );
         candlestickSeries!.attachPrimitive(primitive);
       });
@@ -676,7 +683,8 @@ const renderFlatWaves = () => {
           box.start_time,
           box.end_time,
           box.min_price,
-          box.max_price
+          box.max_price,
+          props.candles
         );
         candlestickSeries!.attachPrimitive(primitive);
       });
@@ -758,6 +766,7 @@ const renderFlatWaves = () => {
         wave.target_box.end_time,
         wave.target_box.min_price,
         wave.target_box.max_price,
+        props.candles,
         'rgba(20, 184, 166, 0.15)',  // teal fill
         'rgba(45, 212, 191, 0.80)',  // teal stroke
       );

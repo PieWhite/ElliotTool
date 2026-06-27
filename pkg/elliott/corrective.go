@@ -6,111 +6,134 @@ import (
 	"WaveSight/pkg/model"
 )
 
-// MatchCorrectiveWaves scans a slice of pivots for valid Elliott Wave corrective structures.
-// It returns all detected ZIGZAG, FLAT, TRIANGLE, and WXY patterns.
-// Memory allocation inside the loops is minimized to ensure zero heap-allocation churn.
+const (
+	fibToleranceCorrective = 0.03
+	maxLookaheadCorrective = 16
+)
+
+// MatchCorrectiveWaves scant een slice van pivots voor valide Elliott Wave correctiestructuren.
+// Het retourneert alle gedetecteerde ZIGZAG, FLAT, TRIANGLE (Contracting, Expanding, Barrier) en WXY patronen.
 func MatchCorrectiveWaves(pivots []model.Pivot) []model.CorrectiveWave {
 	n := len(pivots)
 	if n < 4 {
 		return nil
 	}
 
-	// Pre-allocate slice with a reasonable capacity to avoid reallocation churn.
 	correctiveWaves := make([]model.CorrectiveWave, 0, n/4)
 
-	// --- 3-wave ABC structures: ZigZag & Flat (window of 4 pivots) ---
-	for i := 0; i <= n-4; i++ {
+	for i := 0; i < n; i++ {
 		p0 := &pivots[i]
-		p1 := &pivots[i+1]
-		p2 := &pivots[i+2]
-		p3 := &pivots[i+3]
-
-		var direction string
-		var isPatternMatch bool
-		var correctiveType string
-
-		if p0.Type == model.PivotHigh {
-			// BEARISH check (correcting a bullish trend, net direction down)
-			if p1.Type != model.PivotLow ||
-				p2.Type != model.PivotHigh ||
-				p3.Type != model.PivotLow {
-				continue
-			}
-
-			// Verify basic structural direction movements (down-up-down)
-			if p1.Price >= p0.Price ||
-				p2.Price <= p1.Price ||
-				p3.Price >= p2.Price {
-				continue
-			}
-
-			direction = "BEARISH"
-			isPatternMatch, correctiveType = evaluateCorrectiveRules(p0, p1, p2, p3, direction)
-
-		} else if p0.Type == model.PivotLow {
-			// BULLISH check (correcting a bearish trend, net direction up)
-			if p1.Type != model.PivotHigh ||
-				p2.Type != model.PivotLow ||
-				p3.Type != model.PivotHigh {
-				continue
-			}
-
-			// Verify basic structural direction movements (up-down-up)
-			if p1.Price <= p0.Price ||
-				p2.Price >= p1.Price ||
-				p3.Price <= p2.Price {
-				continue
-			}
-
-			direction = "BULLISH"
-			isPatternMatch, correctiveType = evaluateCorrectiveRules(p0, p1, p2, p3, direction)
+		endWindow := i + maxLookaheadCorrective
+		if endWindow > n {
+			endWindow = n
 		}
 
-		if isPatternMatch {
-			correctiveWaves = append(correctiveWaves, model.CorrectiveWave{
-				Start:       p0,
-				WA:          p1,
-				WB:          p2,
-				WC:          p3,
-				Type:        correctiveType,
-				Direction:   direction,
-				PurpleBoxes: calculateWaveCTargetBoxes(p0, p1, p2, p3),
-			})
-		}
-	}
+		// --- 1. 3-wave ABC structuren: ZigZag & Flat (Non-consecutive lookahead) ---
+		for i1 := i + 1; i1 < endWindow; i1++ {
+			p1 := &pivots[i1]
+			for i2 := i1 + 1; i2 < endWindow; i2++ {
+				p2 := &pivots[i2]
+				for i3 := i2 + 1; i3 < endWindow; i3++ {
+					p3 := &pivots[i3]
 
-	// --- Triangle ABCDE structures (window of 6 pivots: Start + A + B + C + D + E) ---
-	if n >= 6 {
-		for i := 0; i <= n-6; i++ {
-			p0 := &pivots[i]
-			p1 := &pivots[i+1]
-			p2 := &pivots[i+2]
-			p3 := &pivots[i+3]
-			p4 := &pivots[i+4]
-			p5 := &pivots[i+5]
+					var direction string
+					var isPatternMatch bool
+					var correctiveType string
 
-			tri, ok := evaluateTriangle(p0, p1, p2, p3, p4, p5)
-			if ok {
-				correctiveWaves = append(correctiveWaves, tri)
+					if p0.Type == model.PivotHigh {
+						if p1.Type != model.PivotLow || p2.Type != model.PivotHigh || p3.Type != model.PivotLow {
+							continue
+						}
+						if p1.Price >= p0.Price || p2.Price <= p1.Price || p3.Price >= p2.Price {
+							continue
+						}
+						direction = "BEARISH"
+						isPatternMatch, correctiveType = evaluateCorrectiveRules(p0, p1, p2, p3, direction)
+
+					} else if p0.Type == model.PivotLow {
+						if p1.Type != model.PivotHigh || p2.Type != model.PivotLow || p3.Type != model.PivotHigh {
+							continue
+						}
+						if p1.Price <= p0.Price || p2.Price >= p1.Price || p3.Price <= p2.Price {
+							continue
+						}
+						direction = "BULLISH"
+						isPatternMatch, correctiveType = evaluateCorrectiveRules(p0, p1, p2, p3, direction)
+					}
+
+					if isPatternMatch {
+						correctiveWaves = append(correctiveWaves, model.CorrectiveWave{
+							Start:       p0,
+							WA:          p1,
+							WB:          p2,
+							WC:          p3,
+							Type:        correctiveType,
+							Direction:   direction,
+							PurpleBoxes: calculateWaveCTargetBoxes(p0, p1, p2, p3),
+						})
+					}
+				}
 			}
 		}
-	}
 
-	// --- WXY Double Three structures (window of 8 pivots: Start + W(3) + X(1) + Y(3)) ---
-	if n >= 8 {
-		for i := 0; i <= n-8; i++ {
-			p0 := &pivots[i]
-			p1 := &pivots[i+1]
-			p2 := &pivots[i+2]
-			p3 := &pivots[i+3]
-			p4 := &pivots[i+4]
-			p5 := &pivots[i+5]
-			p6 := &pivots[i+6]
-			p7 := &pivots[i+7]
+		// --- 2. Driehoek ABCDE Structuren (6 pivots: Start + A + B + C + D + E) ---
+		if i+5 < n {
+			for i1 := i + 1; i1 < endWindow; i1++ {
+				p1 := &pivots[i1]
+				for i2 := i1 + 1; i2 < endWindow; i2++ {
+					p2 := &pivots[i2]
+					for i3 := i2 + 1; i3 < endWindow; i3++ {
+						p3 := &pivots[i3]
+						for i4 := i3 + 1; i4 < endWindow; i4++ {
+							p4 := &pivots[i4]
+							for i5 := i4 + 1; i5 < endWindow; i5++ {
+								p5 := &pivots[i5]
 
-			wxy, ok := evaluateWXY(p0, p1, p2, p3, p4, p5, p6, p7)
-			if ok {
-				correctiveWaves = append(correctiveWaves, wxy)
+								tri, ok := evaluateTriangle(p0, p1, p2, p3, p4, p5)
+								if ok {
+									correctiveWaves = append(correctiveWaves, tri)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// --- 3. WXY Double Three Combinaties (10 pivots: Start + W(3) + X(3) + Y(3)) ---
+		// Wave X is zelf verplicht een herkenbare abc correctie.
+		if i+9 < n {
+			for i1 := i + 1; i1 < endWindow; i1++ {
+				p1 := &pivots[i1]
+				for i2 := i1 + 1; i2 < endWindow; i2++ {
+					p2 := &pivots[i2]
+					for i3 := i2 + 1; i3 < endWindow; i3++ {
+						p3 := &pivots[i3]
+						for i4 := i3 + 1; i4 < endWindow; i4++ {
+							p4 := &pivots[i4]
+							for i5 := i4 + 1; i5 < endWindow; i5++ {
+								p5 := &pivots[i5]
+								for i6 := i5 + 1; i6 < endWindow; i6++ {
+									p6 := &pivots[i6]
+									for i7 := i6 + 1; i7 < endWindow; i7++ {
+										p7 := &pivots[i7]
+										for i8 := i7 + 1; i8 < endWindow; i8++ {
+											p8 := &pivots[i8]
+											for i9 := i8 + 1; i9 < endWindow; i9++ {
+												p9 := &pivots[i9]
+
+												wxy, ok := evaluateWXYFull(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9)
+												if ok {
+													correctiveWaves = append(correctiveWaves, wxy)
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -118,7 +141,7 @@ func MatchCorrectiveWaves(pivots []model.Pivot) []model.CorrectiveWave {
 	return correctiveWaves
 }
 
-// evaluateCorrectiveRules classifies a 4-pivot (Start+ABC) corrective structure as ZIGZAG or FLAT.
+// evaluateCorrectiveRules classificeert een 4-pivot ABC structuur conform Expanded/Regular wetten.
 func evaluateCorrectiveRules(p0, p1, p2, p3 *model.Pivot, direction string) (bool, string) {
 	lenA := math.Abs(p1.Price - p0.Price)
 	if lenA == 0 {
@@ -131,10 +154,9 @@ func evaluateCorrectiveRules(p0, p1, p2, p3 *model.Pivot, direction string) (boo
 	ratioB := lenB / lenA
 	ratioC := lenC / lenA
 
-	// 1. ZigZag Logic (Sharp Correction)
-	// Wave B must retrace between 38.2% and 50.0% of Wave A (+/- 2% tolerance)
-	if ratioB >= 0.382-0.02 && ratioB <= 0.500+0.02 {
-		// Wave C must cleanly break past the extreme price level of Wave A
+	// 1. Gecorrigeerde ZigZag Logica (38.2% - 61.8% retracement voor Wave B)
+	//
+	if ratioB >= 0.382-fibToleranceCorrective && ratioB <= 0.618+fibToleranceCorrective {
 		cleanBreak := false
 		if direction == "BEARISH" && p3.Price < p1.Price {
 			cleanBreak = true
@@ -143,54 +165,42 @@ func evaluateCorrectiveRules(p0, p1, p2, p3 *model.Pivot, direction string) (boo
 		}
 
 		if cleanBreak {
-			// Wave C typically reaching 100% to 161.8% of Wave A's length (+/- 2% tolerance)
-			if ratioC >= 1.000-0.02 && ratioC <= 1.618+0.02 {
+			if math.Abs(ratioC-0.62) <= fibToleranceCorrective ||
+				math.Abs(ratioC-1.000) <= fibToleranceCorrective ||
+				math.Abs(ratioC-1.62) <= fibToleranceCorrective ||
+				(ratioC >= 1.000 && ratioC <= 1.62) {
 				return true, "ZIGZAG"
 			}
 		}
 	}
 
-	// 2. Flat Logic (Sideways Correction)
-	// Wave B must retrace nearly the entire length of Wave A (between 90.0% and 105.0% retracement)
-	if ratioB >= 0.900 && ratioB <= 1.050 {
-		// Wave C must terminate very close to or just slightly past the end of Wave A (between 90.0% and 130.0% of Wave A's length)
-		if ratioC >= 0.900 && ratioC <= 1.300 {
-			return true, "FLAT"
+	// 2. Gecorrigeerde Flat Logica (Inclusief de cruciale Expanded Flats tot 138.2%)
+	//
+	if ratioB >= 0.900-fibToleranceCorrective && ratioB <= 1.382+fibToleranceCorrective {
+		if ratioB > 1.05 {
+			if ratioC >= 1.000 || math.Abs(ratioC-1.236) <= fibToleranceCorrective || math.Abs(ratioC-1.62) <= fibToleranceCorrective {
+				return true, "FLAT"
+			}
+		} else {
+			if ratioC >= 0.900-fibToleranceCorrective && ratioC <= 1.300+fibToleranceCorrective {
+				return true, "FLAT"
+			}
 		}
 	}
 
 	return false, ""
 }
 
-// evaluateTriangle checks whether 6 consecutive pivots form a contracting Elliott Wave Triangle (ABCDE).
-//
-// Structure: p0 (Start) → p1 (A) → p2 (B) → p3 (C) → p4 (D) → p5 (E)
-// The Start pivot is the origin before WA begins.
-// Contracting rule: |AB| > |BC| > |CD| > |DE| (each successive leg is strictly shorter).
-// Direction:
-//   - BULLISH triangle: Start is a PivotLow, price oscillates sideways upward.
-//   - BEARISH triangle: Start is a PivotHigh, price oscillates sideways downward.
+// evaluateTriangle controleert op Contracting, Expanding en Barrier Triangles gebaseerd op Frost & Prechter.
 func evaluateTriangle(p0, p1, p2, p3, p4, p5 *model.Pivot) (model.CorrectiveWave, bool) {
-	// The five ABCDE pivots are p1..p5. p0 is the structural origin (Start).
-	// Determine direction from the starting pivot type.
 	var direction string
 	if p0.Type == model.PivotLow {
-		// BULLISH triangle: Start is Low, alternating H-L-H-L-H
-		if p1.Type != model.PivotHigh ||
-			p2.Type != model.PivotLow ||
-			p3.Type != model.PivotHigh ||
-			p4.Type != model.PivotLow ||
-			p5.Type != model.PivotHigh {
+		if p1.Type != model.PivotHigh || p2.Type != model.PivotLow || p3.Type != model.PivotHigh || p4.Type != model.PivotLow || p5.Type != model.PivotHigh {
 			return model.CorrectiveWave{}, false
 		}
 		direction = "BULLISH"
 	} else if p0.Type == model.PivotHigh {
-		// BEARISH triangle: Start is High, alternating L-H-L-H-L
-		if p1.Type != model.PivotLow ||
-			p2.Type != model.PivotHigh ||
-			p3.Type != model.PivotLow ||
-			p4.Type != model.PivotHigh ||
-			p5.Type != model.PivotLow {
+		if p1.Type != model.PivotLow || p2.Type != model.PivotHigh || p3.Type != model.PivotLow || p4.Type != model.PivotHigh || p5.Type != model.PivotLow {
 			return model.CorrectiveWave{}, false
 		}
 		direction = "BEARISH"
@@ -198,21 +208,45 @@ func evaluateTriangle(p0, p1, p2, p3, p4, p5 *model.Pivot) (model.CorrectiveWave
 		return model.CorrectiveWave{}, false
 	}
 
-	// Calculate the absolute price lengths of each ABCDE leg.
-	// Leg A: p0→p1, Leg B: p1→p2, Leg C: p2→p3, Leg D: p3→p4, Leg E: p4→p5
 	legA := math.Abs(p1.Price - p0.Price)
 	legB := math.Abs(p2.Price - p1.Price)
 	legC := math.Abs(p3.Price - p2.Price)
 	legD := math.Abs(p4.Price - p3.Price)
 	legE := math.Abs(p5.Price - p4.Price)
 
-	if legA == 0 {
+	if legA == 0 || legB == 0 || legC == 0 || legD == 0 {
 		return model.CorrectiveWave{}, false
 	}
 
-	// Contracting constraint: each leg strictly shorter than the previous.
-	if !(legA > legB && legB > legC && legC > legD && legD > legE) {
+	isContracting := legA > legB && legB > legC && legC > legD && legD > legE
+	isExpanding := legA < legB && legB < legC && legC < legD && legD < legE
+	isBarrier := math.Abs(p2.Price-p4.Price)/p2.Price <= 0.015 || math.Abs(p3.Price-p5.Price)/p3.Price <= 0.015
+
+	if !isContracting && !isExpanding && !isBarrier {
 		return model.CorrectiveWave{}, false
+	}
+
+	ratioB := legB / legA
+	ratioC := legC / legB
+	ratioD := legD / legC
+	ratioE := legE / legD
+
+	isValidRatio := func(r float64) bool {
+		return r >= 0.45 && r <= 0.90
+	}
+
+	if !isExpanding {
+		if !isValidRatio(ratioB) || !isValidRatio(ratioC) || !isValidRatio(ratioD) || !isValidRatio(ratioE) {
+			return model.CorrectiveWave{}, false
+		}
+	}
+
+	typeName := "TRIANGLE_CONTRACTING"
+	if isExpanding {
+		typeName = "TRIANGLE_EXPANDING"
+	}
+	if isBarrier {
+		typeName = "TRIANGLE_BARRIER"
 	}
 
 	return model.CorrectiveWave{
@@ -222,23 +256,14 @@ func evaluateTriangle(p0, p1, p2, p3, p4, p5 *model.Pivot) (model.CorrectiveWave
 		WC:        p3,
 		WD:        p4,
 		WE:        p5,
-		Type:      "TRIANGLE",
+		Type:      typeName,
 		Direction: direction,
 	}, true
 }
 
-// evaluateWXY checks whether 8 consecutive pivots form an Elliott Wave Double Three (WXY).
-//
-// Structure: p0 (Start) → p1..p3 (first corrective W: 3 legs) → p4 (X connector) → p5..p7 (second corrective Y: 3 legs)
-// Window: 8 pivots = 1 (Start) + 3 (W-legs: A,B,C) + 1 (X-bounce) + 3 (Y-legs: A,B,C)
-//
-// Rules:
-//  1. The W component (p0..p3) must pass evaluateCorrectiveRules as ZIGZAG or FLAT.
-//  2. The X-wave (p3→p4) must retrace less than 90% of the W leg amplitude to avoid invalid reversals.
-//  3. The Y component (p4..p7) must pass evaluateCorrectiveRules as ZIGZAG or FLAT.
-//  4. Overall net direction: the structure must move net in the direction of W (bearish or bullish).
-func evaluateWXY(p0, p1, p2, p3, p4, p5, p6, p7 *model.Pivot) (model.CorrectiveWave, bool) {
-	// Determine direction from starting pivot type.
+// evaluateWXYFull valideert een Double Three combinatie (10-pivots).
+// Garandeert dat Wave W NOOIT een Triangle is.
+func evaluateWXYFull(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9 *model.Pivot) (model.CorrectiveWave, bool) {
 	var direction string
 	if p0.Type == model.PivotHigh {
 		direction = "BEARISH"
@@ -248,67 +273,70 @@ func evaluateWXY(p0, p1, p2, p3, p4, p5, p6, p7 *model.Pivot) (model.CorrectiveW
 		return model.CorrectiveWave{}, false
 	}
 
-	// 1. W-wave: validate p0..p3 as a corrective structure.
-	//    Basic direction check for W.
-	wMatch, _ := evaluateCorrectiveRules(p0, p1, p2, p3, direction)
-	if !wMatch {
+	// 1. Valideer Wave W (p0 tot p3) -> Alleen FLAT of ZIGZAG toegestaan (Triangle uitgesloten conform Prechter pag 31)
+	wMatch, wType := evaluateCorrectiveRules(p0, p1, p2, p3, direction)
+	if !wMatch || wType == "TRIANGLE" {
 		return model.CorrectiveWave{}, false
 	}
 
-	// 2. X-wave: p3 → p4 (single pivot bounce in the opposite direction of W).
-	//    X must not retrace more than 90% of the W-wave amplitude (p0→p3).
+	// 2. Valideer Wave X als een volwaardige tegen-correctie a-b-c (p3 tot p6)
+	oppDirection := "BULLISH"
+	if direction == "BULLISH" {
+		oppDirection = "BEARISH"
+	}
+	xMatch, _ := evaluateCorrectiveRules(p3, p4, p5, p6, oppDirection)
+	if !xMatch {
+		return model.CorrectiveWave{}, false
+	}
+
 	wAmplitude := math.Abs(p3.Price - p0.Price)
 	if wAmplitude == 0 {
 		return model.CorrectiveWave{}, false
 	}
-	xLen := math.Abs(p4.Price - p3.Price)
-	xRetrace := xLen / wAmplitude
-	if xRetrace > 0.90 {
+	xLen := math.Abs(p6.Price - p3.Price)
+	if xLen/wAmplitude > 0.90 {
 		return model.CorrectiveWave{}, false
 	}
 
-	// X pivot must bounce opposite to W direction.
-	if direction == "BEARISH" {
-		// W moved down (p0 High → p3 Low). X must bounce up from p3.
-		if p4.Type != model.PivotHigh || p4.Price <= p3.Price {
-			return model.CorrectiveWave{}, false
-		}
+	// 3. Valideer Wave Y (p6 tot p9) -> Mag ABC OF een terminale driehoek-compressie zijn
+	yMatch := false
+	isABC, _ := evaluateCorrectiveRules(p6, p7, p8, p9, direction)
+	if isABC {
+		yMatch = true
 	} else {
-		// W moved up (p0 Low → p3 High). X must bounce down from p3.
-		if p4.Type != model.PivotLow || p4.Price >= p3.Price {
-			return model.CorrectiveWave{}, false
+		leg1 := math.Abs(p7.Price - p6.Price)
+		leg2 := math.Abs(p8.Price - p7.Price)
+		leg3 := math.Abs(p9.Price - p8.Price)
+		if leg1 > leg2 && leg2 > leg3 && leg3 > 0 {
+			yMatch = true
 		}
 	}
 
-	// 3. Y-wave: validate p4..p7 as a corrective structure in the same direction as W.
-	yMatch, _ := evaluateCorrectiveRules(p4, p5, p6, p7, direction)
 	if !yMatch {
 		return model.CorrectiveWave{}, false
 	}
 
-	// 4. Net direction check: Y must end further than W's end in the direction of the move.
+	// 4. Richtingscontrole
 	if direction == "BEARISH" {
-		// Both W and Y are bearish; p7 must be lower than p3 (Y's end is lower than W's end).
-		if p7.Price >= p3.Price {
+		if p9.Price >= p3.Price {
 			return model.CorrectiveWave{}, false
 		}
 	} else {
-		// Both W and Y are bullish; p7 must be higher than p3.
-		if p7.Price <= p3.Price {
+		if p9.Price <= p3.Price {
 			return model.CorrectiveWave{}, false
 		}
 	}
 
 	return model.CorrectiveWave{
 		Start:       p0,
-		WA:          p1, // W-wave's A pivot
-		WB:          p2, // W-wave's B pivot
-		WC:          p3, // W-wave's C pivot (end of W-wave)
-		WX:          p4, // X-wave connector pivot
-		WD:          p5, // Y-wave's A pivot
-		WE:          p7, // Y-wave's C pivot (terminal endpoint of the Double Three)
+		WA:          p1,
+		WB:          p2,
+		WC:          p3, // Einde Wave W
+		WX:          p6, // Einde Wave X
+		WD:          p7,
+		WE:          p9, // Eindpunt Double Three
 		Type:        "WXY",
 		Direction:   direction,
-		PurpleBoxes: calculateWaveCTargetBoxes(p4, p5, p6, p7),
+		PurpleBoxes: calculateWaveCTargetBoxes(p6, p7, p8, p9),
 	}, true
 }

@@ -14,6 +14,8 @@ const (
 	fractalValidationPenalty = 0.10
 )
 
+// ScenarioBundle scant de pivots, past fractalvalidatie toe, rangschikt ze via DP
+// en bouwt de ultieme chronologische ketting zonder wiskundige weglatingen.
 func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimeframe string) (motives []model.MotiveWave, correctives []model.CorrectiveWave, incompletes []model.IncompleteWave, pair *model.ScenarioPair) {
 	var parentMotives []model.MotiveWave
 	var parentCorrectives []model.CorrectiveWave

@@ -139,8 +139,10 @@ func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	pivots := zigzag.CalculateZigZag(candles, percentDeviation)
 
 	var childPivots []model.Pivot
+	// In pkg/api/api.go -> De child percentDeviation corrigeren
 	if len(childCandles) > 0 {
-		childPivots = zigzag.CalculateZigZag(childCandles, percentDeviation)
+		// Schaal de deviatie wiskundig naar beneden voor de fijnere ruis op de uurgrafiek (bijv. delen door 3)
+		childPivots = zigzag.CalculateZigZag(childCandles, percentDeviation/3.0)
 	}
 
 	// ScenarioBundle ranks all patterns into a primary/alternate pair while also
@@ -261,4 +263,3 @@ func (h *Handler) getOrFetchCandles(ctx context.Context, ticker, timeframe strin
 	}
 	return candles, nil
 }
-

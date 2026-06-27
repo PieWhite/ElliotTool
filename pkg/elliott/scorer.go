@@ -14,12 +14,7 @@ const (
 	fractalValidationPenalty = 0.10
 )
 
-type scoredStructure struct {
-	structure model.WaveStructure
-}
-
-// ScenarioBundle scant de pivots, past fractalvalidatie toe, rangschikt ze via DP
-// en bouwt de ultieme chronologische ketting zonder wiskundige weglatingen.
+// ScenarioBundle verwerkt alle berekende data en weegt scenario's evenredig.
 func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimeframe string) (motives []model.MotiveWave, correctives []model.CorrectiveWave, incompletes []model.IncompleteWave, pair *model.ScenarioPair) {
 	var parentMotives []model.MotiveWave
 	var parentCorrectives []model.CorrectiveWave
@@ -240,7 +235,7 @@ func correctiveToStructure(cw model.CorrectiveWave) model.WaveStructure {
 		pivots = append(pivots, *cw.WE)
 	}
 
-	const correctiveBaseScore = 0.70
+	const correctiveBaseScore = 0.68
 
 	return model.WaveStructure{
 		Type:            typeName,
@@ -301,7 +296,6 @@ func findBestChain(candidates []model.WaveStructure) []model.WaveStructure {
 		nextOpt[i] = -1
 	}
 
-	// Gecorrigeerde dynamische programmering zonder premature breaks
 	for i := n - 1; i >= 0; i-- {
 		skipScore := 0.0
 		if i+1 < n {
@@ -312,7 +306,7 @@ func findBestChain(candidates []model.WaveStructure) []model.WaveStructure {
 		bestNextIdx := -1
 		iEnd := candidates[i].Pivots[len(candidates[i].Pivots)-1].Time
 
-		// Scant álle opeenvolgende niet-overlappende structuren om het maximale cumulatieve pad te vinden
+		// Sluit geen paden uit; scan de volledige array voor cumulatieve evaluatie
 		for j := i + 1; j < n; j++ {
 			if candidates[j].Pivots[0].Time >= iEnd {
 				currentPathScore := candidates[i].ConfidenceScore + dp[j]
@@ -346,17 +340,26 @@ func findBestChain(candidates []model.WaveStructure) []model.WaveStructure {
 	return bestChain
 }
 
+// getChainConfidence weegt de complexiteit van de golven evenredig mee (Gemiddelde + Motive-Bonus)
 func getChainConfidence(chain []model.WaveStructure) float64 {
 	if len(chain) == 0 {
 		return 0.0
 	}
-	maxConf := 0.0
+
+	totalScore := 0.0
 	for _, ws := range chain {
-		if ws.ConfidenceScore > maxConf {
-			maxConf = ws.ConfidenceScore
+		if strings.HasPrefix(ws.Type, "MOTIVE_") {
+			totalScore += ws.ConfidenceScore * 1.25 // Beloon grote 5-wave motive trends
+		} else {
+			totalScore += ws.ConfidenceScore
 		}
 	}
-	return maxConf
+
+	avg := totalScore / float64(len(chain))
+	if avg > 1.0 {
+		return 1.0
+	}
+	return avg
 }
 
 func assembleScenarioStructures(chain []model.WaveStructure, subWavesMap map[int64][]model.WaveStructure) []model.WaveStructure {

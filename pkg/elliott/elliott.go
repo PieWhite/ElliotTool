@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	fibTolerance       = 0.02
+	cardinalTolerance  = 0.01 // Zeer strikt voor kardinale regels (zoals overlap)
+	maxFibTolerance    = 0.15 // 15% soepele ademruimte voor Fibonacci-richtlijnen (Conform Prechter)
 	minConfidenceScore = 0.60
-	maxLookaheadWindow = 16 // Maximale diepte voor het skippen van sub-pivots
+	maxLookaheadWindow = 16
 )
 
-// MatchMotiveWaves scant een slice van pivots voor valide 5-wave Elliott Wave structuren.
-// Maakt gebruik van een non-consecutive lookahead om ruis en sub-golven te filteren.
+// MatchMotiveWaves scant pivots voor valide 5-wave Elliott Wave motive structuren.
 func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 	n := len(pivots)
 	if n < 6 {
@@ -65,14 +65,17 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 								len3 := p3.Price - p2.Price
 								len5 := p5.Price - p4.Price
 
-								// Cardinal Rule 3: Wave 4 overlap controle
+								// Kardinale Regel 3: Wave 4 overlap controle
 								overlap := p4.Price <= p1.Price
 								isDiagonal := false
 								if overlap {
 									if len1 > len3 && len3 > len5 {
 										isDiagonal = true
 									} else {
-										continue
+										// Strikte uitsluiting bij ongeldige overlap
+										if p4.Price <= p1.Price*(1.0-cardinalTolerance) {
+											continue
+										}
 									}
 								}
 
@@ -86,7 +89,7 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 									}
 								}
 
-								// Cardinal Rule 2: Wave 3 mag niet de kortste zijn
+								// Kardinale Regel 2: Wave 3 mag nooit de kortste zijn
 								if !isDiagonal {
 									if len3 < len1 && len3 < len5 {
 										continue
@@ -153,14 +156,16 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 								len3 := p2.Price - p3.Price
 								len5 := p4.Price - p5.Price
 
-								// Cardinal Rule 3: Wave 4 overlap controle
+								// Kardinale Regel 3: Wave 4 overlap controle
 								overlap := p4.Price >= p1.Price
 								isDiagonal := false
 								if overlap {
 									if len1 > len3 && len3 > len5 {
 										isDiagonal = true
 									} else {
-										continue
+										if p4.Price >= p1.Price*(1.0+cardinalTolerance) {
+											continue
+										}
 									}
 								}
 
@@ -174,7 +179,7 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 									}
 								}
 
-								// Cardinal Rule 2: Wave 3 mag niet de kortste zijn
+								// Kardinale Regel 2: Wave 3 mag nooit de kortste zijn
 								if !isDiagonal {
 									if len3 < len1 && len3 < len5 {
 										continue
@@ -210,8 +215,7 @@ func MatchMotiveWaves(pivots []model.Pivot) []model.MotiveWave {
 	return motiveWaves
 }
 
-// MatchIncompleteWaves scant pivots voor ontwikkelende 1-2-3 structuren.
-// De onderdrukkingsvoorwaarde is weggelaten om alternatieve visuele counts te tonen.
+// MatchIncompleteWaves scant pivots voor opbouwende 1-2-3 Elliott Wave structuren.
 func MatchIncompleteWaves(pivots []model.Pivot) []model.IncompleteWave {
 	n := len(pivots)
 	if n < 4 {
@@ -308,7 +312,7 @@ func MatchIncompleteWaves(pivots []model.Pivot) []model.IncompleteWave {
 	return incompleteWaves
 }
 
-// calculateConfidenceScore berekent de Fibonacci alignment score op basis van Frost & Prechter & WaveRatios.pdf.
+// calculateConfidenceScore berekent de Fibonacci alignment score via soepele lineaire afbouw.
 func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, isTruncated bool) float64 {
 	len1 := math.Abs(p1.Price - p0.Price)
 	len2 := math.Abs(p1.Price - p2.Price)
@@ -321,7 +325,7 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 		return 0.0
 	}
 
-	// --- 1. Wave 2 Retracement Check ---
+	// --- 1. Wave 2 Retracement (50%, 61.8%, 78.6%) ---
 	ratio2 := len2 / len1
 	minD2 := math.Abs(ratio2 - 0.50)
 	if d := math.Abs(ratio2 - 0.618); d < minD2 {
@@ -331,11 +335,11 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 		minD2 = d
 	}
 	score2 := 0.0
-	if minD2 <= fibTolerance {
-		score2 = 1.0 - (minD2 / fibTolerance)
+	if minD2 <= maxFibTolerance {
+		score2 = 1.0 - (minD2 / maxFibTolerance)
 	}
 
-	// --- 2. Wave 3 Extension Check ---
+	// --- 2. Wave 3 Extension ---
 	ratio3 := len3 / len1
 	score3 := 0.0
 	if isDiagonal {
@@ -343,21 +347,21 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 		if d := math.Abs(ratio3 - 0.786); d < minD3 {
 			minD3 = d
 		}
-		if minD3 <= fibTolerance {
-			score3 = 1.0 - (minD3 / fibTolerance)
+		if minD3 <= maxFibTolerance {
+			score3 = 1.0 - (minD3 / maxFibTolerance)
 		}
 	} else {
-		if ratio3 >= 1.618-fibTolerance {
+		if ratio3 >= 1.618-cardinalTolerance {
 			score3 = 1.0
 		} else {
-			d3 := math.Abs(ratio3 - 1.0) // Soms is W3 gelijk aan W1 bij extensie in W5
-			if d3 <= fibTolerance {
-				score3 = 1.0 - (d3 / fibTolerance)
+			d3 := math.Abs(ratio3 - 1.00) // W3 kan gelijk zijn aan W1 bij W5 extensie
+			if d3 <= maxFibTolerance {
+				score3 = 1.0 - (d3 / maxFibTolerance)
 			}
 		}
 	}
 
-	// --- 3. Wave 4 Retracement Check (Toegevoegd op basis van WaveRatios Pagina 3) ---
+	// --- 3. Wave 4 Retracement (24%, 38.2%, 50%) ---
 	ratio4 := len4 / len3
 	minD4 := math.Abs(ratio4 - 0.24)
 	if d := math.Abs(ratio4 - 0.382); d < minD4 {
@@ -367,16 +371,16 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 		minD4 = d
 	}
 	score4 := 0.0
-	if minD4 <= fibTolerance {
-		score4 = 1.0 - (minD4 / fibTolerance)
+	if minD4 <= maxFibTolerance {
+		score4 = 1.0 - (minD4 / maxFibTolerance)
 	}
 
-	// --- 4. Dynamische Wave 5 Target Check (Wiskundige splitsing op basis van handboeken) ---
+	// --- 4. Dynamische Wave 5 Score ---
 	score5 := 0.0
 	minD5 := 999.0
 
 	if ratio3 >= 1.618 {
-		// Als Wave 3 verlengd is, relateert Wave 5 aan Wave 1 (1.00, 1.618, 2.618)
+		// Wave 3 verlengd: verhouding tot W1 (1.00, 1.618, 2.618)
 		r5A := len5 / len1
 		targets := []float64{1.00, 1.618, 2.618}
 		for _, t := range targets {
@@ -385,7 +389,7 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 			}
 		}
 	} else {
-		// Als Wave 3 niet verlengd is, relateert Wave 5 aan de Netto afstand 0 tot 3 (0.618, 1.00, 1.618)
+		// Wave 3 kort: verhouding tot netto 0->3 (0.618, 1.00, 1.618)
 		r5B := len5 / net0to3
 		targets := []float64{0.618, 1.00, 1.618}
 		for _, t := range targets {
@@ -404,11 +408,10 @@ func calculateConfidenceScore(p0, p1, p2, p3, p4, p5 *model.Pivot, isDiagonal, i
 		}
 	}
 
-	if minD5 <= fibTolerance {
-		score5 = 1.0 - (minD5 / fibTolerance)
+	if minD5 <= maxFibTolerance {
+		score5 = 1.0 - (minD5 / maxFibTolerance)
 	}
 
-	// Gemiddelde van alle 4 de criteria
 	return (score2 + score3 + score4 + score5) / 4.0
 }
 
@@ -431,20 +434,21 @@ func calculateIncompleteConfidenceScore(p0, p1, p2, p3 *model.Pivot) float64 {
 		minD2 = d
 	}
 	score2 := 0.0
-	if minD2 <= fibTolerance {
-		score2 = 1.0 - (minD2 / fibTolerance)
+	if minD2 <= maxFibTolerance {
+		score2 = 1.0 - (minD2 / maxFibTolerance)
 	}
 
+	// Versoepeld voor ontluikende trends: groter dan 100% is valide uitbraak
 	ratio3 := len3 / len1
 	score3 := 0.0
-	if ratio3 >= 1.618-fibTolerance {
-		score3 = 1.0
+	if ratio3 >= 1.00 {
+		score3 = math.Min(1.0, ratio3/1.618)
 	}
 
 	return (score2 + score3) / 2.0
 }
 
-// calculateTargetBox genereert de paarse vakken op basis van de Wave 3 extensiestatus.
+// calculateTargetBox genereert paarse doelvakken op basis van de Wave 3 extensiestatus.
 func calculateTargetBox(p0, p1, p2, p3, p4, p5 *model.Pivot) []model.TargetBox {
 	len1 := math.Abs(p1.Price - p0.Price)
 	len3 := math.Abs(p3.Price - p2.Price)
@@ -460,17 +464,15 @@ func calculateTargetBox(p0, p1, p2, p3, p4, p5 *model.Pivot) []model.TargetBox {
 	var distances []float64
 
 	if ratio3 >= 1.618 {
-		// Verlengde W3: targets gebaseerd op Wave 1
 		distances = []float64{len1, len1 * 1.618, len1 * 2.618}
 	} else {
-		// Korte W3: targets gebaseerd op de totale afstand van 0 tot 3
 		distances = []float64{net0to3 * 0.618, net0to3, net0to3 * 1.618}
 	}
 
 	return targetBoxesFromOrigin(p4.Price, direction, startTime, endTime, distances)
 }
 
-// calculateWave3TargetBoxes projecteert de Wave 3 targets conform de exacte eSignal ratio's (1.62, 2.62, 4.25).
+// calculateWave3TargetBoxes gebruikt de eSignal-verhoudingen (1.62, 2.62, 4.25).
 func calculateWave3TargetBoxes(p0, p1, p2, p3 *model.Pivot) []model.TargetBox {
 	len1 := math.Abs(p1.Price - p0.Price)
 	if len1 == 0 {
@@ -487,7 +489,7 @@ func calculateWave3TargetBoxes(p0, p1, p2, p3 *model.Pivot) []model.TargetBox {
 	})
 }
 
-// calculateWaveCTargetBoxes berekent de corrigerende Wave C targets (0.618, 1.00, 1.618).
+// calculateWaveCTargetBoxes voegt de missende 0.618 ratio toe.
 func calculateWaveCTargetBoxes(p0, p1, p2, p3 *model.Pivot) []model.TargetBox {
 	lenA := math.Abs(p1.Price - p0.Price)
 	if lenA == 0 {
@@ -504,7 +506,7 @@ func calculateWaveCTargetBoxes(p0, p1, p2, p3 *model.Pivot) []model.TargetBox {
 	})
 }
 
-// calculateWave4TargetBox voorspelt het Wave 4 retracement vak (38.2% van Wave 3).
+// calculateWave4TargetBox voorspelt het 38.2% doelniveau.
 func calculateWave4TargetBox(p0, p1, p2, p3 *model.Pivot, direction string) *model.TargetBox {
 	len3 := math.Abs(p3.Price - p2.Price)
 	var targetPrice float64
@@ -550,7 +552,6 @@ func targetTimeWindow(originTime int64, deltaT int64) (int64, int64) {
 	if delta <= 0 {
 		delta = 600
 	}
-
 	startTime := float64(originTime) + (delta * 0.382)
 	endTime := float64(originTime) + (delta * 0.618)
 	return int64(math.Round(startTime)), int64(math.Round(endTime))
@@ -580,6 +581,5 @@ func targetBoxesFromOrigin(originPrice float64, direction string, startTime, end
 			EndTime:   endTime,
 		})
 	}
-
 	return boxes
 }

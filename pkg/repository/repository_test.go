@@ -3,125 +3,102 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"testing"
 
-	"WaveSight/pkg/model"
+	"WaveSight/internal/market"
 )
 
-func TestSQLiteCandleRepository_All(t *testing.T) {
-	// Open connection to an isolated, in-memory SQLite database
-	db, err := sql.Open("sqlite", "file::memory:?cache=shared")
+func testStore(t *testing.T) *SQLiteStore {
+	t.Helper()
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite DB: %v", err)
+		t.Fatalf("sql.Open() error = %v", err)
 	}
-	defer db.Close()
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("db.Close() error = %v", err)
+		}
+	})
+	store := NewSQLiteStore(db)
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	return store
+}
 
-	repo := NewSQLiteCandleRepository(db)
+func TestSQLiteStoreCandlesAndCoverage(t *testing.T) {
+	t.Parallel()
+	store := testStore(t)
 	ctx := context.Background()
-
-	// 1. Test Migrations
-	if err := repo.Migrate(ctx); err != nil {
-		t.Fatalf("migration failed: %v", err)
+	candles := []market.Candle{
+		{Time: 1_000, Open: 100, High: 103, Low: 99, Close: 102, Volume: 10_000},
+		{Time: 2_000, Open: 102, High: 106, Low: 101, Close: 105, Volume: 12_000},
+		{Time: 3_000, Open: 105, High: 107, Low: 102, Close: 103, Volume: 11_000},
+	}
+	if err := store.SaveCandles(ctx, "AAPL", market.Timeframe1D, candles); err != nil {
+		t.Fatalf("SaveCandles() error = %v", err)
 	}
 
-	ticker := "AAPL"
-	timeframe := "10m"
-
-	// 2. Test Save & Retrieve
-	testCandles := []model.Candle{
-		{Time: 1000, Open: 150.0, High: 152.0, Low: 149.0, Close: 151.5, Volume: 10000},
-		{Time: 2000, Open: 151.5, High: 153.0, Low: 151.0, Close: 152.8, Volume: 12000},
-		{Time: 3000, Open: 152.8, High: 155.0, Low: 152.0, Close: 154.2, Volume: 15000},
-	}
-
-	err = repo.SaveCandles(ctx, ticker, timeframe, testCandles)
+	got, err := store.GetCandles(ctx, "AAPL", market.Timeframe1D, 1_500, 3_000)
 	if err != nil {
-		t.Fatalf("SaveCandles failed: %v", err)
+		t.Fatalf("GetCandles() error = %v", err)
+	}
+	if len(got) != 2 || got[0].Time != 2_000 || got[1].Close != 103 {
+		t.Fatalf("GetCandles() = %+v", got)
 	}
 
-	retrieved, err := repo.GetCandles(ctx, ticker, timeframe, 1000, 3000)
-	if err != nil {
-		t.Fatalf("GetCandles failed: %v", err)
+	candles[1].High = 110
+	if err := store.SaveCandles(ctx, "AAPL", market.Timeframe1D, candles[1:2]); err != nil {
+		t.Fatalf("SaveCandles(upsert) error = %v", err)
+	}
+	got, err = store.GetCandles(ctx, "AAPL", market.Timeframe1D, 2_000, 2_000)
+	if err != nil || len(got) != 1 || got[0].High != 110 {
+		t.Fatalf("upsert result = %+v, error = %v", got, err)
 	}
 
-	if len(retrieved) != 3 {
-		t.Fatalf("expected 3 candles, got %d", len(retrieved))
+	covered, err := store.HasCoverage(ctx, "AAPL", market.Timeframe1D, 1_000, 3_000)
+	if err != nil || covered {
+		t.Fatalf("HasCoverage() before save = %t, %v", covered, err)
 	}
+	if err := store.SaveCoverage(ctx, "AAPL", market.Timeframe1D, 500, 3_500); err != nil {
+		t.Fatalf("SaveCoverage() error = %v", err)
+	}
+	covered, err = store.HasCoverage(ctx, "AAPL", market.Timeframe1D, 1_000, 3_000)
+	if err != nil || !covered {
+		t.Fatalf("HasCoverage() after save = %t, %v", covered, err)
+	}
+}
 
-	for i, expected := range testCandles {
-		actual := retrieved[i]
-		if actual.Time != expected.Time {
-			t.Errorf("candle[%d]: expected Time %d, got %d", i, expected.Time, actual.Time)
-		}
-		if actual.Open != expected.Open {
-			t.Errorf("candle[%d]: expected Open %f, got %f", i, expected.Open, actual.Open)
-		}
-		if actual.High != expected.High {
-			t.Errorf("candle[%d]: expected High %f, got %f", i, expected.High, actual.High)
-		}
-		if actual.Low != expected.Low {
-			t.Errorf("candle[%d]: expected Low %f, got %f", i, expected.Low, actual.Low)
-		}
-		if actual.Close != expected.Close {
-			t.Errorf("candle[%d]: expected Close %f, got %f", i, expected.Close, actual.Close)
-		}
-		if actual.Volume != expected.Volume {
-			t.Errorf("candle[%d]: expected Volume %f, got %f", i, expected.Volume, actual.Volume)
-		}
+func TestSQLiteStoreSnapshotsAreImmutableAndListed(t *testing.T) {
+	t.Parallel()
+	store := testStore(t)
+	ctx := context.Background()
+	metadata := SnapshotMetadata{
+		ID: "0123456789abcdef0123456789abcdef", Symbol: "AAPL", Timeframe: "1D",
+		Session: "RTH", AsOf: 1_000, GeneratedAt: 2_000,
+		TheoryVersion: "theory-1", EngineVersion: "engine-1",
 	}
-
-	// 3. Test Range Filtering
-	retrievedHalf, err := repo.GetCandles(ctx, ticker, timeframe, 1500, 2500)
-	if err != nil {
-		t.Fatalf("GetCandles in range failed: %v", err)
+	first := []byte(`{"id":"first"}`)
+	if err := store.SaveSnapshot(ctx, metadata, first); err != nil {
+		t.Fatalf("SaveSnapshot() error = %v", err)
 	}
-	if len(retrievedHalf) != 1 {
-		t.Fatalf("expected 1 candle in range [1500, 2500], got %d", len(retrievedHalf))
+	if err := store.SaveSnapshot(ctx, metadata, []byte(`{"id":"replacement"}`)); err != nil {
+		t.Fatalf("SaveSnapshot(duplicate) error = %v", err)
 	}
-	if retrievedHalf[0].Time != 2000 {
-		t.Errorf("expected retrieved candle to have Time 2000, got %d", retrievedHalf[0].Time)
+	got, err := store.GetSnapshot(ctx, metadata.ID)
+	if err != nil || string(got) != string(first) {
+		t.Fatalf("GetSnapshot() = %s, %v; immutable payload changed", got, err)
 	}
-
-	// 4. Test Upsert / Overwrite (Idempotence)
-	updatedCandle := []model.Candle{
-		{Time: 2000, Open: 151.5, High: 160.0, Low: 151.0, Close: 159.5, Volume: 22000}, // Modified High, Close, Volume
+	items, err := store.ListSnapshots(ctx, 20)
+	if err != nil || len(items) != 1 || items[0].ID != metadata.ID {
+		t.Fatalf("ListSnapshots() = %+v, %v", items, err)
 	}
-	err = repo.SaveCandles(ctx, ticker, timeframe, updatedCandle)
-	if err != nil {
-		t.Fatalf("SaveCandles for upsert failed: %v", err)
-	}
-
-	retrievedAfterUpsert, err := repo.GetCandles(ctx, ticker, timeframe, 1000, 3000)
-	if err != nil {
-		t.Fatalf("GetCandles after upsert failed: %v", err)
-	}
-
-	if len(retrievedAfterUpsert) != 3 {
-		t.Fatalf("expected 3 candles after upsert, got %d", len(retrievedAfterUpsert))
-	}
-
-	actualUpdated := retrievedAfterUpsert[1]
-	if actualUpdated.High != 160.0 {
-		t.Errorf("expected upserted High to be 160.0, got %f", actualUpdated.High)
-	}
-	if actualUpdated.Close != 159.5 {
-		t.Errorf("expected upserted Close to be 159.5, got %f", actualUpdated.Close)
-	}
-	if actualUpdated.Volume != 22000 {
-		t.Errorf("expected upserted Volume to be 22000, got %f", actualUpdated.Volume)
-	}
-
-	// 5. Test empty inputs and non-existent queries
-	err = repo.SaveCandles(ctx, ticker, timeframe, nil)
-	if err != nil {
-		t.Errorf("expected saving nil slice to not fail, got: %v", err)
-	}
-
-	retrievedEmpty, err := repo.GetCandles(ctx, "MSFT", timeframe, 1000, 3000)
-	if err != nil {
-		t.Fatalf("GetCandles for non-existent ticker failed: %v", err)
-	}
-	if len(retrievedEmpty) != 0 {
-		t.Errorf("expected 0 candles for non-existent ticker, got %d", len(retrievedEmpty))
+	_, err = store.GetSnapshot(ctx, "missing")
+	if !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("GetSnapshot(missing) error = %v", err)
 	}
 }

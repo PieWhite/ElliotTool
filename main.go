@@ -3,54 +3,98 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"WaveSight/internal/domain/wave"
+	"WaveSight/internal/market"
 	"WaveSight/pkg/api"
 	"WaveSight/pkg/config"
 	"WaveSight/pkg/polygon"
 	"WaveSight/pkg/repository"
-	"WaveSight/pkg/swing"
 )
 
 func main() {
-	log.Println("Starting WaveSight backend...")
+	if err := run(); err != nil {
+		log.Printf("WaveSight stopped: %v", err)
+		os.Exit(1)
+	}
+}
 
-	// 1. Load config (.env or environment)
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return fmt.Errorf("loading configuration: %w", err)
 	}
-
-	// 2. Open SQLite Database
-	db, err := sql.Open("sqlite", "candles.db")
+	db, err := sql.Open("sqlite", cfg.DatabasePath)
 	if err != nil {
-		log.Fatalf("Failed to open SQLite database: %v", err)
+		return fmt.Errorf("opening SQLite: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("closing SQLite: %v", closeErr)
+		}
+	}()
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
-	// 3. Create repository and run migrations
-	repo := repository.NewSQLiteCandleRepository(db)
-	ctx := context.Background()
-	if err := repo.Migrate(ctx); err != nil {
-		log.Fatalf("Failed to migrate SQLite database: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	store := repository.NewSQLiteStore(db)
+	if err := store.Migrate(ctx); err != nil {
+		return err
 	}
-
-	// 4. Create Polygon client
-	polygonClient := polygon.NewClient(cfg.PolygonAPIKey, &http.Client{})
-
-	// 5. Initialize API Handler with volatility-adaptive swing detector (14-period ATR)
-	detector := swing.NewVolatilitySwingDetector(14)
-	handler := api.NewHandler(polygonClient, repo, detector)
-
-	// 6. Start HTTP Server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	calendar, err := market.NewUSCalendar()
+	if err != nil {
+		return err
 	}
-	log.Printf("Server listening on http://localhost:%s\n", port)
-	if err := http.ListenAndServe(":"+port, handler); err != nil {
-		log.Fatalf("Server failed to run: %v", err)
+	httpClient := &http.Client{Timeout: cfg.ProviderTimeout}
+	provider := polygon.NewClient(cfg.PolygonAPIKey, httpClient)
+	provider.SetBaseURL(cfg.ProviderBaseURL)
+	handler := api.NewHandler(
+		provider,
+		store,
+		wave.NewEngine(),
+		calendar,
+		api.HandlerConfig{
+			AllowedOrigins: cfg.AllowedOrigins, MaxConcurrentScans: cfg.MaxConcurrentScans,
+			StaticDir: cfg.FrontendDir,
+		},
+	)
+
+	server := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      45 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("WaveSight %s listening on http://localhost:%s", wave.EngineVersion, cfg.Port)
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutting down HTTP server: %w", err)
+		}
+		return nil
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serving HTTP: %w", err)
 	}
 }

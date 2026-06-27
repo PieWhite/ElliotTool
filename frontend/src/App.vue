@@ -1,375 +1,355 @@
 <template>
-  <div class="min-h-screen bg-[#070a13] text-gray-100 flex flex-col antialiased">
-    <!-- Header Navigation -->
-    <header class="border-b border-gray-800/80 bg-[#090d16]/70 backdrop-blur sticky top-0 z-40">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <!-- Premium Logo Icon -->
-          <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
-            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-          </div>
-          <div>
-            <h1 id="main-header" class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent m-0">
-              WAVESIGHT
-            </h1>
-            <p class="text-[10px] text-gray-400 tracking-wider uppercase font-semibold m-0">
-              Elliott Wave Terminal
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
-            v1.0.0 Stable
-          </span>
-        </div>
+  <div class="app-shell">
+    <header class="app-header">
+      <a class="brand" href="/" aria-label="WaveSight home">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><strong>WaveSight</strong><small>Elliott Wave Intelligence</small></span>
+      </a>
+      <div class="header-meta">
+        <span class="engine-state"><i></i> Engine v{{ snapshot?.engine_version ?? '2.0.0' }}</span>
+        <button class="icon-button" type="button" title="Analysis history" @click="historyOpen = !historyOpen">
+          History
+        </button>
       </div>
     </header>
 
-    <!-- Main Workspace -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
-      
-      <!-- Control Panel -->
-      <section class="bg-[#090d16]/90 border border-gray-800/80 rounded-xl p-5 shadow-xl fade-in">
-        <form @submit.prevent="fetchMarketData" class="grid grid-cols-1 md:grid-cols-5 gap-5 items-end">
-          
-          <!-- Ticker Search -->
-          <div class="flex flex-col gap-2">
-            <label for="ticker-search-input" class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              Asset Ticker
-            </label>
-            <div class="relative">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <input
-                id="ticker-search-input"
-                type="text"
-                v-model="ticker"
-                placeholder="e.g. AAPL"
-                class="w-full bg-[#0d1222] border border-gray-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-lg pl-9 pr-3 py-2 text-sm font-medium uppercase tracking-wide text-gray-100 placeholder-gray-600 transition-colors"
-                :disabled="loading"
-              />
-            </div>
-          </div>
+    <main>
+      <form class="scan-bar" @submit.prevent="scan">
+        <label class="ticker-field">
+          <span>Symbol</span>
+          <input v-model="symbol" maxlength="15" autocomplete="off" spellcheck="false" aria-label="Ticker symbol">
+        </label>
+        <label>
+          <span>Timeframe</span>
+          <select v-model="timeframe">
+            <option v-for="item in timeframes" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+        <label>
+          <span>Lookback</span>
+          <select v-model.number="lookbackBars">
+            <option :value="500">500 bars</option>
+            <option :value="2000">2,000 bars</option>
+            <option :value="5000">5,000 bars</option>
+            <option :value="10000">10,000 bars</option>
+            <option :value="50000">50,000 bars</option>
+          </select>
+        </label>
+        <label>
+          <span>Session</span>
+          <select v-model="session">
+            <option value="RTH">Regular hours</option>
+            <option value="EXTENDED">Extended hours</option>
+          </select>
+        </label>
+        <label class="asof-field">
+          <span>As of</span>
+          <input v-model="asOf" type="datetime-local" aria-label="Analysis date and time">
+        </label>
+        <button class="scan-button" type="submit" :disabled="loading">
+          <span v-if="loading" class="spinner"></span>
+          {{ loading ? 'Scanning structure…' : 'Scan market' }}
+        </button>
+      </form>
 
-          <!-- Timeframe Selector -->
-          <div class="flex flex-col gap-2">
-            <label for="timeframe-select" class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              Timeframe
-            </label>
-            <select
-              id="timeframe-select"
-              v-model="timeframe"
-              class="w-full bg-[#0d1222] border border-gray-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-lg px-3 py-2 text-sm font-medium text-gray-100 transition-colors cursor-pointer"
-              :disabled="loading"
-            >
-              <option value="10m">10 Minutes (10m)</option>
-              <option value="1h">1 Hour (1h)</option>
-              <option value="1D">1 Day (1D)</option>
-              <option value="1W">1 Week (1W)</option>
-            </select>
-          </div>
+      <div v-if="error" class="status-banner error-banner" role="alert">
+        <span><strong>Scan unavailable</strong>{{ error }}</span>
+        <button type="button" @click="error = null">Dismiss</button>
+      </div>
 
-          <!-- Deviation Slider -->
-          <div class="flex flex-col gap-2">
-            <div class="flex justify-between items-center">
-              <label for="deviation-slider" class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                ZigZag Deviation
-              </label>
-              <span class="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                {{ (deviation * 100).toFixed(1) }}%
-              </span>
-            </div>
-            <div class="flex items-center gap-3">
-              <input
-                id="deviation-slider"
-                type="range"
-                v-model.number="deviation"
-                min="0.01"
-                max="0.05"
-                step="0.005"
-                class="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                :disabled="loading"
-              />
-            </div>
-          </div>
+      <div v-if="snapshot?.data_quality.warnings?.length" class="status-banner quality-banner">
+        <span>
+          <strong>Data-quality note</strong>
+          {{ snapshot.data_quality.warnings.join(' ') }}
+        </span>
+        <span>{{ snapshot.data_quality.ambiguous_pivot_count }} ambiguous pivots</span>
+      </div>
 
-          <!-- Scenario Toggle (Step 10) -->
-          <div class="flex flex-col gap-2">
-            <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              Scenario View
-            </label>
-            <div class="flex gap-2">
-              <!-- Bullish Button -->
-              <button
-                id="scenario-bullish-btn"
-                type="button"
-                @click="setScenario('primary')"
-                class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-2 rounded-lg border text-xs font-bold transition-all"
-                :class="activeScenarioBias === 'primary'
-                  ? 'bg-green-500/15 border-green-500 text-green-400 shadow-lg shadow-green-500/10'
-                  : 'bg-transparent border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'"
-                :disabled="!scenarios || loading"
-              >
-                <span class="text-[11px]">▲ BULLISH</span>
-                <span
-                  v-if="scenarios"
-                  class="text-[9px] font-medium opacity-80"
-                  :class="activeScenarioBias === 'primary' ? 'text-green-300' : 'text-gray-600'"
-                >
-                  {{ (scenarios.primary.confidence * 100).toFixed(0) }}% conf
-                </span>
-                <span v-else class="text-[9px] text-gray-700">—</span>
-              </button>
-              <!-- Bearish Button -->
-              <button
-                id="scenario-bearish-btn"
-                type="button"
-                @click="setScenario('alternate')"
-                class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-2 rounded-lg border text-xs font-bold transition-all"
-                :class="activeScenarioBias === 'alternate'
-                  ? 'bg-red-500/15 border-red-500 text-red-400 shadow-lg shadow-red-500/10'
-                  : 'bg-transparent border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'"
-                :disabled="!scenarios || loading"
-              >
-                <span class="text-[11px]">▼ BEARISH</span>
-                <span
-                  v-if="scenarios"
-                  class="text-[9px] font-medium opacity-80"
-                  :class="activeScenarioBias === 'alternate' ? 'text-red-300' : 'text-gray-600'"
-                >
-                  {{ (scenarios.alternate.confidence * 100).toFixed(0) }}% conf
-                </span>
-                <span v-else class="text-[9px] text-gray-700">—</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Fetch Action -->
-          <div>
-            <button
-              id="search-btn"
-              type="submit"
-              class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-[0.99] text-white text-sm font-semibold py-2 px-4 rounded-lg shadow-lg shadow-purple-600/10 hover:shadow-purple-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              :disabled="loading"
-            >
-              <span v-if="loading" id="loading-spinner" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-              <span>{{ loading ? 'Analyzing...' : 'Scan Market' }}</span>
-            </button>
-          </div>
-        </form>
+      <section v-if="snapshot" class="scenario-rail" aria-label="Ranked scenarios">
+        <article
+          v-for="scenarioItem in scenarios"
+          :key="scenarioItem.id"
+          :class="['scenario-card', { active: scenarioItem.id === activeScenarioID }]"
+        >
+          <button type="button" class="scenario-main" @click="selectScenario(scenarioItem.id)">
+                <span class="scenario-rank">{{ scenarioDisplayName(scenarioItem) }}</span>
+            <span :class="['bias', scenarioItem.bias.toLowerCase()]">{{ scenarioItem.bias }}</span>
+            <strong>{{ scenarioItem.root.label || scenarioItem.root.pattern.replaceAll('_', ' ') }}</strong>
+            <small>{{ scenarioItem.current_position }}</small>
+            <span class="conformance-line">
+              <i :style="{ width: `${Math.round(scenarioItem.conformance.score * 100)}%` }"></i>
+            </span>
+            <span class="conformance-copy">
+              {{ scenarioItem.conformance.hard_rules_passed }} hard rules ·
+              {{ scenarioItem.conformance.guidelines_passed }} guidelines ·
+              {{ scenarioItem.conformance.ratio_confluences }} ratio supports
+            </span>
+          </button>
+          <button
+            v-if="scenarioItem.id !== activeScenarioID"
+            type="button"
+            :class="['compare-button', { selected: scenarioItem.id === compareScenarioID }]"
+            @click="selectComparison(scenarioItem.id)"
+          >
+            {{ scenarioItem.id === compareScenarioID ? 'Comparing' : 'Compare' }}
+          </button>
+        </article>
       </section>
 
-      <!-- Error Banner -->
-      <transition name="fade">
-        <div
-          v-if="error"
-          id="error-banner"
-          class="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3 text-red-400 fade-in"
-        >
-          <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <div class="flex-grow">
-            <h4 class="font-bold text-sm">Failed to process engine scan</h4>
-            <p class="text-xs mt-1 text-red-400/90 leading-relaxed">{{ error }}</p>
-          </div>
-          <button @click="clearError" class="text-red-400/60 hover:text-red-400 transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </transition>
-
-      <!-- Chart & Details Grid -->
-      <section class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        
-        <!-- Left 3 Columns: Chart Area -->
-        <div class="lg:col-span-3 flex flex-col gap-4 relative">
-          <!-- Loading skeleton overlay -->
-          <div v-if="loading && candles.length === 0" class="absolute inset-0 bg-[#090d16]/40 backdrop-blur-sm z-20 flex items-center justify-center rounded-xl border border-gray-800/80">
-            <div class="flex flex-col items-center gap-3">
-              <div class="w-10 h-10 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
-              <span class="text-xs font-semibold text-gray-400">Loading candles & processing waves...</span>
+      <section class="workspace">
+        <div class="chart-column">
+          <div class="chart-toolbar">
+            <div>
+              <strong>{{ snapshot ? `${snapshot.request.symbol} · ${snapshot.request.timeframe}` : 'Market structure' }}</strong>
+              <span v-if="snapshot">{{ formatDate(snapshot.data_quality.first_time) }} — {{ formatDate(snapshot.data_quality.last_time) }}</span>
+            </div>
+            <div class="toolbar-actions">
+              <button type="button" :class="{ active: scale === 'ARITHMETIC' }" @click="scale = 'ARITHMETIC'">Arithmetic</button>
+              <button type="button" :class="{ active: scale === 'LOG' }" @click="scale = 'LOG'">Log</button>
+              <button type="button" :disabled="!snapshot" @click="chart?.exportPNG()">PNG</button>
+              <button type="button" :disabled="!snapshot" @click="exportJSON">JSON</button>
+              <button type="button" :disabled="!snapshot" @click="copyShareLink">{{ copied ? 'Copied' : 'Share' }}</button>
             </div>
           </div>
-
-          <!-- Chart Render Canvas -->
           <ChartWidget
-            :candles="candles"
-            :motiveWaves="motiveWaves"
-            :correctiveWaves="correctiveWaves"
-            :incompleteWaves="incompleteWaves"
-            :activeScenario="activeScenario"
-            class="fade-in"
+            ref="chart"
+            :snapshot="snapshot"
+            :scenario="activeScenario"
+            :comparison="compareScenario"
+            :scale="scale"
+            :visible-degrees="visibleDegrees"
           />
-
-          <!-- Quick Statistics bar -->
-          <div v-if="candles.length > 0" class="bg-[#090d16]/40 border border-gray-800/60 rounded-xl px-4 py-3 flex flex-wrap gap-x-8 gap-y-2 justify-between items-center text-xs text-gray-400 fade-in">
-            <div class="flex items-center gap-2">
-              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-              <span>Loaded Ticker: <strong class="text-gray-200">{{ ticker.toUpperCase() }}</strong></span>
-            </div>
-            <div>
-              <span>Candles Analyzed: <strong class="text-gray-200">{{ candles.length }}</strong></span>
-            </div>
-            <div>
-              <span>Period: <strong class="text-gray-200">{{ formatDate(candles[0].time) }}</strong> to <strong class="text-gray-200">{{ formatDate(candles[candles.length - 1].time) }}</strong></span>
-            </div>
+          <div v-if="snapshot" class="chart-footer">
+            <span>{{ snapshot.data_quality.candle_count.toLocaleString() }} split-adjusted bars</span>
+            <span>Theory {{ snapshot.theory_version }}</span>
+            <span>Snapshot {{ snapshot.id.slice(0, 8) }}</span>
           </div>
         </div>
 
-        <!-- Right 1 Column: Elliott Wave Details Panel -->
-        <div class="bg-[#090d16]/90 border border-gray-800/80 rounded-xl p-5 shadow-xl flex flex-col gap-4 min-h-[500px] fade-in">
-          <div>
-            <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider m-0">
-              Scanned Wave Patterns
-            </h3>
-            <p class="text-xs text-gray-500 mt-1">
-              Pivots identified by the mathematical scanner.
-            </p>
+        <aside class="analysis-panel">
+          <template v-if="activeScenario">
+            <section class="panel-section current-position">
+              <span class="eyebrow">Current wave path</span>
+              <h2>{{ activeScenario.current_position }}</h2>
+              <p v-if="activeScenario.status === 'INDETERMINATE'" class="indeterminate">
+                WaveSight will not manufacture a count when observable structure is insufficient.
+              </p>
+              <div v-else class="invalidations">
+                <span v-for="item in activeScenario.invalidations" :key="item.id">
+                  <i></i>{{ item.price ? formatPrice(item.price) : item.rule_id }} · {{ item.description }}
+                </span>
+              </div>
+            </section>
+
+            <section class="panel-section">
+              <div class="section-heading">
+                <span><span class="eyebrow">Conditional ladder</span><strong>Purple Box targets</strong></span>
+                <small>{{ activeTargets.length }} active levels</small>
+              </div>
+              <div v-if="activeTargets.length" class="target-list">
+                <article v-for="target in activeTargets" :key="target.id" class="target-card">
+                  <header>
+                    <span class="target-wave">{{ target.wave_label }}</span>
+                    <span :class="['confluence', target.confluence.toLowerCase()]">{{ target.confluence.replace('_', ' ') }}</span>
+                  </header>
+                  <strong>
+                    {{ formatPrice(target.min_price) }}
+                    <template v-if="target.max_price !== target.min_price"> — {{ formatPrice(target.max_price) }}</template>
+                  </strong>
+                  <p>{{ target.condition }}</p>
+                  <div class="target-levels">
+                    <span v-for="level in target.levels" :key="`${target.id}-${level.family}-${level.price}`">
+                      {{ formatPrice(level.price) }} <small>{{ level.relation }}</small>
+                    </span>
+                  </div>
+                  <footer>
+                    <span>{{ target.status }}</span>
+                    <span v-if="target.time_window">
+                      {{ formatDate(target.time_window.start_time ?? 0) }} — {{ formatDate(target.time_window.end_time ?? 0) }}
+                    </span>
+                    <span v-else>Open-ended · no time confluence</span>
+                  </footer>
+                </article>
+              </div>
+              <p v-else class="empty-copy">No active target zone is justified for this structural state.</p>
+            </section>
+
+            <details class="panel-section audit">
+              <summary>
+                <span><span class="eyebrow">Transparent evidence</span><strong>Rule audit</strong></span>
+                <span>{{ ruleAudit.length }}</span>
+              </summary>
+              <div class="audit-list">
+                <article v-for="rule in ruleAudit" :key="`${rule.node}-${rule.result.rule_id}`">
+                  <span :class="['rule-status', rule.result.status.toLowerCase()]">{{ rule.result.status.replace('_', ' ') }}</span>
+                  <div>
+                    <strong>{{ rule.result.rule_id }}</strong>
+                    <small>{{ rule.node }} · {{ rule.result.class }} · {{ rule.result.source }}</small>
+                    <p>{{ rule.result.summary }} <em v-if="rule.result.expected">{{ rule.result.expected }}</em></p>
+                  </div>
+                </article>
+              </div>
+            </details>
+
+            <details class="panel-section wave-tree" open>
+              <summary>
+                <span><span class="eyebrow">Relative nesting</span><strong>Wave tree</strong></span>
+              </summary>
+              <div class="degree-filters">
+                <label v-for="degree in availableDegrees" :key="degree">
+                  <input
+                    type="checkbox"
+                    :checked="visibleDegrees.includes(degree)"
+                    @change="toggleDegree(degree)"
+                  >
+                  {{ degree.replaceAll('_', ' ') }}
+                </label>
+              </div>
+              <ul><WaveTreeNode :node="activeScenario.root" /></ul>
+            </details>
+          </template>
+          <div v-else class="panel-empty">
+            <span class="brand-mark large"><i></i><i></i><i></i></span>
+            <h2>Structure before prediction</h2>
+            <p>Start a scan to build a recursive count, explicit invalidations and document-backed targets.</p>
           </div>
-
-          <!-- Empty State -->
-          <div v-if="motiveWaves.length === 0 && correctiveWaves.length === 0" class="flex-grow flex flex-col items-center justify-center text-center p-6 border border-dashed border-gray-800 rounded-lg my-2">
-            <svg class="w-8 h-8 text-gray-700 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h5 class="text-xs font-bold text-gray-400 m-0">No Waves Detected</h5>
-            <p class="text-[10px] text-gray-500 mt-1 leading-normal">
-              No motive or corrective waves validate standard Elliott rule constraints. Try adjusting the deviation slider.
-            </p>
-          </div>
-
-          <!-- Lists of waves -->
-          <div v-else class="flex flex-col gap-3 overflow-y-auto max-h-[420px] pr-1">
-            
-            <!-- Motive Waves -->
-            <div v-for="(wave, index) in motiveWaves" :key="'motive-' + index" class="bg-[#0d1222] border border-gray-800 hover:border-purple-500/30 rounded-lg p-3 transition-colors">
-              <div class="flex justify-between items-center">
-                <span class="px-2 py-0.5 text-[9px] font-bold rounded" :class="wave.direction === 'BULLISH' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'">
-                  MOTIVE {{ wave.direction }}
-                </span>
-                <span class="text-[10px] text-gray-400 font-medium">
-                  Conf: {{ (wave.confidence_score * 100).toFixed(0) }}%
-                </span>
-              </div>
-              <div class="mt-2.5 text-xs grid grid-cols-2 gap-y-1.5 text-gray-400">
-                <div>Start Price:</div>
-                <div class="text-right text-gray-200 font-mono">${{ formatPrice(wave.start.price) }}</div>
-                <div>Wave 5 Peak:</div>
-                <div class="text-right text-gray-200 font-mono">${{ formatPrice(wave.w5.price) }}</div>
-              </div>
-              
-              <!-- Purple Box Target Box Coordinates -->
-              <div v-if="wave.purple_boxes?.length" class="mt-2.5 pt-2 border-t border-gray-800/80">
-                <div class="flex items-center gap-1.5 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
-                  <span class="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
-                  Target Boxes (Purple Box)
-                </div>
-                <div v-for="(box, boxIndex) in wave.purple_boxes" :key="'motive-box-' + index + '-' + boxIndex" class="mt-1 text-[11px] grid grid-cols-2 text-gray-500 font-mono leading-tight">
-                  <div>Zone {{ boxIndex + 1 }} Min:</div>
-                  <div class="text-right text-gray-300">${{ formatPrice(box.min_price) }}</div>
-                  <div>Zone {{ boxIndex + 1 }} Max:</div>
-                  <div class="text-right text-gray-300">${{ formatPrice(box.max_price) }}</div>
-                  <div>Target window:</div>
-                  <div class="text-right text-gray-400 text-[9px]">{{ formatDate(box.start_time) }} - {{ formatDate(box.end_time) }}</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Corrective Waves -->
-            <div v-for="(wave, index) in correctiveWaves" :key="'corrective-' + index" class="bg-[#0d1222] border border-gray-800 hover:border-amber-500/30 rounded-lg p-3 transition-colors">
-              <div class="flex justify-between items-center">
-                <span class="px-2 py-0.5 text-[9px] font-bold rounded" :class="wave.direction === 'BULLISH' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'">
-                  CORRECTIVE {{ wave.direction }}
-                </span>
-                <span class="text-[9px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 rounded uppercase">
-                  {{ wave.type }}
-                </span>
-              </div>
-              <div class="mt-2.5 text-xs grid grid-cols-2 gap-y-1.5 text-gray-400 font-mono">
-                <div>Start ({{ wave.start.type }}):</div>
-                <div class="text-right text-gray-200">${{ formatPrice(wave.start.price) }}</div>
-                <div>A:</div>
-                <div class="text-right text-gray-200">${{ formatPrice(wave.wa.price) }}</div>
-                <div>B:</div>
-                <div class="text-right text-gray-200">${{ formatPrice(wave.wb.price) }}</div>
-                <div>C:</div>
-                <div class="text-right text-gray-200">${{ formatPrice(wave.wc.price) }}</div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
+        </aside>
       </section>
     </main>
 
-    <!-- Footer -->
-    <footer class="border-t border-gray-900 bg-[#070a13] py-6 mt-10">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-gray-500">
-        <p>&copy; 2026 WaveSight Engine Core. All rights reserved. Mathematical pivot calculations executed with zero allocation overhead.</p>
-      </div>
-    </footer>
+    <aside :class="['history-drawer', { open: historyOpen }]">
+      <header>
+        <div><span class="eyebrow">Permanent snapshots</span><h2>Scan history</h2></div>
+        <button type="button" @click="historyOpen = false">Close</button>
+      </header>
+      <p v-if="historyLoading" class="empty-copy">Loading history…</p>
+      <button
+        v-for="item in history"
+        :key="item.id"
+        type="button"
+        class="history-item"
+        @click="loadSnapshot(item.id); historyOpen = false"
+      >
+        <span><strong>{{ item.symbol }}</strong>{{ item.timeframe }} · {{ item.session }}</span>
+        <small>{{ formatDateTime(item.generated_at) }}</small>
+        <code>{{ item.id.slice(0, 12) }}</code>
+      </button>
+      <p v-if="!historyLoading && history.length === 0" class="empty-copy">No saved analyses yet.</p>
+    </aside>
+    <div v-if="historyOpen" class="drawer-backdrop" @click="historyOpen = false"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
-import { useMarketData } from './composables/useMarketData';
-import ChartWidget from './components/ChartWidget.vue';
+import { computed, onMounted, ref, watch } from 'vue'
+import ChartWidget from './components/ChartWidget.vue'
+import WaveTreeNode from './components/WaveTreeNode.vue'
+import { useMarketData } from './composables/useMarketData'
+import { scenarioDisplayName, visibleTargetZones } from './domain/presentation'
+import type { RuleEvaluation, Timeframe, WaveNode } from './types/api'
+
+interface ChartExport {
+  exportPNG: () => void
+}
+
+interface AuditedRule {
+  node: string
+  result: RuleEvaluation
+}
+
+const timeframes: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1D', '1W']
+const chart = ref<ChartExport | null>(null)
+const scale = ref<'ARITHMETIC' | 'LOG'>('ARITHMETIC')
+const historyOpen = ref(false)
+const copied = ref(false)
+const visibleDegrees = ref<string[]>([])
 
 const {
-  ticker,
+  symbol,
   timeframe,
-  deviation,
-  candles,
-  motiveWaves,
-  correctiveWaves,
-  incompleteWaves,
+  session,
+  lookbackBars,
+  asOf,
+  snapshot,
+  history,
   scenarios,
   activeScenario,
-  activeScenarioBias,
-  setScenario,
+  compareScenario,
+  activeScenarioID,
+  compareScenarioID,
   loading,
+  historyLoading,
   error,
-  fetchMarketData,
-} = useMarketData();
+  scan,
+  loadSnapshot,
+  selectScenario,
+  selectComparison,
+  exportJSON,
+  initialize,
+} = useMarketData()
 
-const clearError = () => {
-  error.value = null;
-};
+function walkNodes(root: WaveNode | undefined, visit: (node: WaveNode) => void): void {
+  if (!root) return
+  visit(root)
+  for (const child of root.children ?? []) walkNodes(child, visit)
+}
 
-const formatDate = (timestamp: number) => {
-  const date = new Date(timestamp * 1000);
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-};
+const availableDegrees = computed(() => {
+  const values = new Set<string>()
+  walkNodes(activeScenario.value?.root, (node) => values.add(node.degree))
+  return [...values]
+})
 
-const formatPrice = (price: number) => {
-  return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
+watch(availableDegrees, (degrees) => {
+  const next = new Set(visibleDegrees.value)
+  for (const degree of degrees) next.add(degree)
+  visibleDegrees.value = [...next]
+}, { immediate: true })
 
-// Initial data load when component mounts
-onMounted(() => {
-  fetchMarketData();
-});
+const ruleAudit = computed<AuditedRule[]>(() => {
+  const result: AuditedRule[] = []
+  walkNodes(activeScenario.value?.root, (node) => {
+    for (const evaluation of node.rule_evaluations) {
+      result.push({ node: node.label || node.pattern, result: evaluation })
+    }
+  })
+  return result.sort((left, right) => {
+    const order = { FAIL: 0, PASS: 1, NOT_OBSERVABLE: 2, NOT_APPLICABLE: 3 }
+    return order[left.result.status] - order[right.result.status]
+  })
+})
+const activeTargets = computed(() => visibleTargetZones(activeScenario.value))
+
+function toggleDegree(degree: string): void {
+  visibleDegrees.value = visibleDegrees.value.includes(degree)
+    ? visibleDegrees.value.filter((item) => item !== degree)
+    : [...visibleDegrees.value, degree]
+}
+
+function formatPrice(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: value < 10 ? 2 : 0,
+    maximumFractionDigits: value < 10 ? 4 : 2,
+  }).format(value)
+}
+
+function formatDate(value: number): string {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value * 1000))
+}
+
+function formatDateTime(value: number): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value * 1000))
+}
+
+async function copyShareLink(): Promise<void> {
+  if (!snapshot.value) return
+  await navigator.clipboard.writeText(window.location.href)
+  copied.value = true
+  window.setTimeout(() => { copied.value = false }, 1600)
+}
+
+onMounted(initialize)
 </script>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

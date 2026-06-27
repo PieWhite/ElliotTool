@@ -2,113 +2,149 @@ package polygon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
-	"WaveSight/pkg/model"
+	"WaveSight/internal/market"
 )
 
-// HTTPClient defines the interface for making HTTP requests.
-// It allows mocking the network layer in unit tests.
+const defaultBaseURL = "https://api.massive.com"
+
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// Client is the Polygon.io API client.
 type Client struct {
 	apiKey     string
 	httpClient HTTPClient
 	baseURL    string
 }
 
-// NewClient creates a new Polygon API client.
 func NewClient(apiKey string, httpClient HTTPClient) *Client {
-	return &Client{
-		apiKey:     apiKey,
-		httpClient: httpClient,
-		baseURL:    "https://api.massive.com",
-	}
+	return &Client{apiKey: apiKey, httpClient: httpClient, baseURL: defaultBaseURL}
 }
 
-// SetBaseURL allows overriding the base URL (useful for testing).
-func (c *Client) SetBaseURL(url string) {
-	c.baseURL = url
+func (c *Client) SetBaseURL(value string) {
+	c.baseURL = strings.TrimRight(value, "/")
 }
 
-// polygonResponse represents the aggregate endpoint response from Polygon.io.
-type polygonResponse struct {
-	Status       string          `json:"status"`
-	Results      []polygonResult `json:"results"`
-	ResultsCount int             `json:"resultsCount"`
-	Error        string          `json:"error"`
+//easyjson:json
+type pageResponse struct {
+	Status       string       `json:"status"`
+	Results      []pageResult `json:"results"`
+	ResultsCount int          `json:"resultsCount"`
+	Error        string       `json:"error"`
+	NextURL      string       `json:"next_url"`
 }
 
-// polygonResult represents a single bar/candle in Polygon.io response.
-type polygonResult struct {
+//easyjson:json
+type pageResult struct {
 	Open   float64 `json:"o"`
 	High   float64 `json:"h"`
 	Low    float64 `json:"l"`
 	Close  float64 `json:"c"`
 	Volume float64 `json:"v"`
-	Time   int64   `json:"t"` // Milliseconds since epoch
+	Time   int64   `json:"t"`
 }
 
-// FetchCandles fetches historical OHLCV data from the Polygon.io aggregates endpoint.
-func (c *Client) FetchCandles(ctx context.Context, ticker string, multiplier int, timespan string, from string, to string) ([]model.Candle, error) {
-	// Construct the URL path
-	u := fmt.Sprintf("%s/v2/aggs/ticker/%s/range/%d/%s/%s/%s?adjusted=true&sort=asc&limit=50000&apiKey=%s",
+type RateLimitError struct {
+	Message string
+}
+
+func (e *RateLimitError) Error() string {
+	return e.Message
+}
+
+func (c *Client) FetchCandles(ctx context.Context, ticker string, multiplier int, timespan, from, to string) ([]market.Candle, error) {
+	if c.httpClient == nil {
+		return nil, fmt.Errorf("fetching Massive candles: nil HTTP client")
+	}
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("fetching Massive candles: empty API key")
+	}
+
+	nextURL := fmt.Sprintf(
+		"%s/v2/aggs/ticker/%s/range/%d/%s/%s/%s?adjusted=true&sort=asc&limit=50000",
 		c.baseURL,
 		url.PathEscape(ticker),
 		multiplier,
 		url.PathEscape(timespan),
 		url.PathEscape(from),
 		url.PathEscape(to),
-		url.QueryEscape(c.apiKey),
 	)
+	candles := make([]market.Candle, 0, 8_192)
+	seenPages := make(map[string]struct{}, 8)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating http request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		var apiErr polygonResponse
-		if json.Unmarshal(bodyBytes, &apiErr) == nil && apiErr.Error != "" {
-			return nil, fmt.Errorf("polygon API error (status code %d): %s", resp.StatusCode, apiErr.Error)
+	for nextURL != "" {
+		if _, exists := seenPages[nextURL]; exists {
+			return nil, fmt.Errorf("fetching Massive candles: pagination loop detected")
 		}
-		return nil, fmt.Errorf("polygon API returned non-200 status code: %d, body: %s", resp.StatusCode, string(bodyBytes))
-	}
+		seenPages[nextURL] = struct{}{}
 
-	var response polygonResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("decoding json response: %w", err)
-	}
+		requestURL, err := c.withAPIKey(nextURL)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating Massive request: %w", err)
+		}
 
-	if response.Status != "OK" && response.Status != "DELAYED" {
-		return nil, fmt.Errorf("polygon API status error: %s (error: %s)", response.Status, response.Error)
-	}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("executing Massive request: %w", err)
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+		closeErr := resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("reading Massive response: %w", readErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("closing Massive response: %w", closeErr)
+		}
 
-	candles := make([]model.Candle, 0, len(response.Results))
-	for _, res := range response.Results {
-		candles = append(candles, model.Candle{
-			Time:   res.Time / 1000, // convert millisecond timestamp to seconds
-			Open:   res.Open,
-			High:   res.High,
-			Low:    res.Low,
-			Close:  res.Close,
-			Volume: res.Volume,
-		})
-	}
+		var page pageResponse
+		if err := page.UnmarshalJSON(body); err != nil {
+			return nil, fmt.Errorf("decoding Massive response: %w", err)
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, &RateLimitError{Message: nonEmpty(page.Error, "Massive rate limit reached")}
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("Massive status %d: %s", resp.StatusCode, nonEmpty(page.Error, string(body)))
+		}
+		if page.Status != "OK" && page.Status != "DELAYED" {
+			return nil, fmt.Errorf("Massive API status %q: %s", page.Status, page.Error)
+		}
 
+		for _, result := range page.Results {
+			candles = append(candles, market.Candle{
+				Time: result.Time / 1_000, Open: result.Open, High: result.High,
+				Low: result.Low, Close: result.Close, Volume: result.Volume,
+			})
+		}
+		nextURL = page.NextURL
+	}
 	return candles, nil
+}
+
+func (c *Client) withAPIKey(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing Massive pagination URL: %w", err)
+	}
+	query := parsed.Query()
+	query.Set("apiKey", c.apiKey)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func nonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
 }

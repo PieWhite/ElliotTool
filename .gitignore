@@ -1,5 +1,12 @@
 # Environment variables
 .env
+*.db
+*.db-shm
+*.db-wal
+WaveSight.exe
+scratch_*.json
+api_response.json
+coverage*
 
 # Frontend build & dependencies
 frontend/node_modules
@@ -7,3 +14,5 @@ frontend/dist
 frontend/.env.local
 frontend/.env.development.local
 frontend/.env.production.local
+frontend/test-results
+frontend/playwright-report

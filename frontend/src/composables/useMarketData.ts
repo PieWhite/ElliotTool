@@ -1,203 +1,185 @@
-import { ref, shallowRef, computed } from 'vue';
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
+import type {
+  AnalysisRequest,
+  AnalysisSnapshot,
+  Scenario,
+  Session,
+  SnapshotHistory,
+  SnapshotMetadata,
+  Timeframe,
+} from '../types/api'
+import { isProblemResponse } from '../types/api'
 
-export interface Candle {
-  time: number; // Unix timestamp in seconds
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+
+async function responseError(response: Response): Promise<Error> {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (contentType.includes('json')) {
+    const body: unknown = await response.json()
+    if (isProblemResponse(body)) {
+      return new Error(`${body.title}: ${body.detail} (request ${body.request_id})`)
+    }
+  }
+  const body = await response.text()
+  return new Error(body || `WaveSight request failed with status ${response.status}`)
 }
 
-export interface Pivot {
-  time: number;
-  price: number;
-  type: 'HIGH' | 'LOW';
-}
-
-export interface TargetBox {
-  min_price: number;
-  max_price: number;
-  start_time: number;
-  end_time: number;
-}
-
-export interface MotiveWave {
-  start: Pivot;
-  w1: Pivot;
-  w2: Pivot;
-  w3: Pivot;
-  w4: Pivot;
-  w5: Pivot;
-  direction: 'BULLISH' | 'BEARISH';
-  confidence_score: number;
-  purple_boxes?: TargetBox[];
-  is_diagonal: boolean;   // Step 8: true if wave is a converging diagonal (wedge)
-  is_truncated: boolean;  // Step 8: true if Wave 5 fails to exceed Wave 3
-  degree?: string;
-}
-
-export interface CorrectiveWave {
-  start: Pivot;
-  wa: Pivot;
-  wb: Pivot;
-  wc: Pivot;
-  wd?: Pivot;  // Triangle D-pivot or WXY Y-wave A-pivot
-  we?: Pivot;  // Triangle E-pivot or WXY Y-wave C terminal pivot
-  wx?: Pivot;  // WXY X-wave connector pivot
-  type: 'ZIGZAG' | 'FLAT' | 'TRIANGLE' | 'WXY';
-  direction: 'BULLISH' | 'BEARISH';
-  purple_boxes?: TargetBox[];
-  degree?: string;
-}
-
-// Step 8: Incomplete (developing) 1-2-3 structure with a predictive Wave 4 target box.
-export interface IncompleteWave {
-  start: Pivot;
-  w1: Pivot;
-  w2: Pivot;
-  w3: Pivot;
-  direction: 'BULLISH' | 'BEARISH';
-  confidence_score: number;
-  target_box?: TargetBox;
-  degree?: string;
-}
-
-// Step 10: Generic wave structure used inside a scenario (type-agnostic for frontend rendering).
-export interface WaveStructure {
-  type: string;                // e.g. "MOTIVE_IMPULSE", "CORRECTIVE_ZIGZAG", "INCOMPLETE_123"
-  pivots: Pivot[];
-  purple_boxes?: TargetBox[];
-  confidence_score: number;
-  degree?: string;
-  sub_structures?: WaveStructure[];
-}
-
-// Step 10: A directional scenario (Primary or Alternate) containing all supporting structures.
-export interface AnalysisScenario {
-  bias: 'BULLISH' | 'BEARISH';
-  confidence: number;
-  structures: WaveStructure[];
-}
-
-export interface AnalysisResponse {
-  ticker: string;
-  timeframe: string;
-  candles: Candle[];
-  // Step 10: Probabilistic scenario pair
-  scenarios?: {
-    primary: AnalysisScenario;
-    alternate: AnalysisScenario;
-  };
-  // Legacy flat arrays (backward compat)
-  motive_waves: MotiveWave[];
-  corrective_waves: CorrectiveWave[];
-  incomplete_waves: IncompleteWave[]; // Step 8: developing 1-2-3 structures
+function snapshotIDFromLocation(): string | null {
+  const match = window.location.pathname.match(/\/analysis\/([a-f0-9]{32})$/i)
+  return match?.[1] ?? new URLSearchParams(window.location.search).get('analysis')
 }
 
 export function useMarketData() {
-  // Configurable search inputs and states
-  const ticker = ref<string>('AAPL');
-  const timeframe = ref<string>('1D');
-  const deviation = ref<number>(0.02);
+  const symbol = ref('AAPL')
+  const timeframe = ref<Timeframe>('1D')
+  const session = ref<Session>('RTH')
+  const lookbackBars = ref(2000)
+  const asOf = ref('')
 
-  // High-performance arrays using shallowRef to avoid Vue recursive reactive proxy overhead
-  const candles = shallowRef<Candle[]>([]);
-  const motiveWaves = shallowRef<MotiveWave[]>([]);
-  const correctiveWaves = shallowRef<CorrectiveWave[]>([]);
-  const incompleteWaves = shallowRef<IncompleteWave[]>([]);
+  const snapshot = shallowRef<AnalysisSnapshot | null>(null)
+  const history = shallowRef<SnapshotMetadata[]>([])
+  const activeScenarioID = ref('')
+  const compareScenarioID = ref('')
+  const loading = ref(false)
+  const historyLoading = ref(false)
+  const error = ref<string | null>(null)
+  let activeRequest: AbortController | null = null
 
-  // Step 10: Scenario pair and active scenario toggle
-  const scenarios = shallowRef<AnalysisResponse['scenarios']>(undefined);
-  // 'primary' | 'alternate' — controls which scenario the chart renders
-  const activeScenarioBias = ref<'primary' | 'alternate'>('primary');
+  const scenarios = computed(() => snapshot.value?.scenarios ?? [])
+  const activeScenario = computed<Scenario | null>(() => {
+    const items = scenarios.value
+    return items.find((scenario) => scenario.id === activeScenarioID.value) ?? items[0] ?? null
+  })
+  const compareScenario = computed<Scenario | null>(() => {
+    if (!compareScenarioID.value) return null
+    return scenarios.value.find((scenario) => scenario.id === compareScenarioID.value) ?? null
+  })
 
-  // Derived active scenario (reactive to bias toggle + scenarios update)
-  const activeScenario = computed<AnalysisScenario | undefined>(() => {
-    if (!scenarios.value) return undefined;
-    return activeScenarioBias.value === 'primary'
-      ? scenarios.value.primary
-      : scenarios.value.alternate;
-  });
-
-  const setScenario = (bias: 'primary' | 'alternate') => {
-    activeScenarioBias.value = bias;
-  };
-
-  // Loading and error states
-  const loading = ref<boolean>(false);
-  const error = ref<string | null>(null);
-
-  const fetchMarketData = async () => {
-    loading.value = true;
-    error.value = null;
-
-    try {
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-      if (!apiBaseUrl) {
-        throw new Error('VITE_API_BASE_URL environment variable is not defined.');
-      }
-
-      // Format ticker to uppercase for consistency
-      const formattedTicker = ticker.value.trim().toUpperCase();
-      if (!formattedTicker) {
-        throw new Error('Ticker parameter cannot be empty.');
-      }
-
-      const params = new URLSearchParams({
-        timeframe: timeframe.value,
-        deviation: deviation.value.toString(),
-      });
-
-      const response = await fetch(`${apiBaseUrl}/api/analyze/${formattedTicker}?${params.toString()}`);
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `API responded with status code ${response.status}`);
-      }
-
-      const data: AnalysisResponse = await response.json();
-
-      // Ensure candles are sorted chronologically by time
-      const sortedCandles = (data.candles || []).slice().sort((a, b) => a.time - b.time);
-
-      // Mutate shallowRef values directly
-      candles.value = sortedCandles;
-      motiveWaves.value = data.motive_waves || [];
-      correctiveWaves.value = data.corrective_waves || [];
-      incompleteWaves.value = data.incomplete_waves || [];
-      scenarios.value = data.scenarios;
-
-      // Default the toggle to primary on every fresh fetch
-      activeScenarioBias.value = 'primary';
-    } catch (err: any) {
-      console.error('Error fetching market analysis:', err);
-      error.value = err.message || 'An unexpected error occurred while fetching analysis data.';
-      // Reset values in case of failure to prevent displaying stale chart visuals
-      candles.value = [];
-      motiveWaves.value = [];
-      correctiveWaves.value = [];
-      incompleteWaves.value = [];
-      scenarios.value = undefined;
-    } finally {
-      loading.value = false;
+  function installSnapshot(value: AnalysisSnapshot, updateURL = true) {
+    snapshot.value = value
+    symbol.value = value.request.symbol
+    timeframe.value = value.request.timeframe
+    session.value = value.request.session
+    lookbackBars.value = value.request.lookback_bars ?? value.candles.length
+    asOf.value = value.request.as_of?.slice(0, 16) ?? ''
+    activeScenarioID.value = value.scenarios[0]?.id ?? ''
+    compareScenarioID.value = ''
+    if (updateURL) {
+      window.history.replaceState({}, '', `/analysis/${value.id}`)
     }
-  };
+  }
+
+  async function scan() {
+    activeRequest?.abort()
+    activeRequest = new AbortController()
+    loading.value = true
+    error.value = null
+    const request: AnalysisRequest = {
+      symbol: symbol.value.trim().toUpperCase(),
+      timeframe: timeframe.value,
+      session: session.value,
+      lookback_bars: lookbackBars.value,
+      max_scenarios: 5,
+    }
+    if (asOf.value) {
+      request.as_of = new Date(asOf.value).toISOString()
+    }
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v2/analyses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: activeRequest.signal,
+      })
+      if (!response.ok) throw await responseError(response)
+      installSnapshot(await response.json() as AnalysisSnapshot)
+      await loadHistory()
+    } catch (reason: unknown) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      error.value = reason instanceof Error ? reason.message : 'The analysis could not be completed.'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function loadSnapshot(id: string, updateURL = true) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v2/analyses/${encodeURIComponent(id)}`)
+      if (!response.ok) throw await responseError(response)
+      installSnapshot(await response.json() as AnalysisSnapshot, updateURL)
+    } catch (reason: unknown) {
+      error.value = reason instanceof Error ? reason.message : 'The saved analysis could not be loaded.'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function loadHistory() {
+    historyLoading.value = true
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v2/analyses?limit=20`)
+      if (!response.ok) throw await responseError(response)
+      const value = await response.json() as SnapshotHistory
+      history.value = value.items
+    } catch (reason: unknown) {
+      if (!snapshot.value) {
+        error.value = reason instanceof Error ? reason.message : 'Analysis history is unavailable.'
+      }
+    } finally {
+      historyLoading.value = false
+    }
+  }
+
+  function selectScenario(id: string) {
+    activeScenarioID.value = id
+    if (compareScenarioID.value === id) compareScenarioID.value = ''
+  }
+
+  function selectComparison(id: string) {
+    compareScenarioID.value = compareScenarioID.value === id ? '' : id
+  }
+
+  function exportJSON() {
+    if (!snapshot.value) return
+    const blob = new Blob([JSON.stringify(snapshot.value, null, 2)], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `wavesight-${snapshot.value.request.symbol}-${snapshot.value.id}.json`
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  async function initialize() {
+    const id = snapshotIDFromLocation()
+    await Promise.all([id ? loadSnapshot(id, false) : Promise.resolve(), loadHistory()])
+  }
+
+  onBeforeUnmount(() => activeRequest?.abort())
 
   return {
-    ticker,
+    symbol,
     timeframe,
-    deviation,
-    candles,
-    motiveWaves,
-    correctiveWaves,
-    incompleteWaves,
+    session,
+    lookbackBars,
+    asOf,
+    snapshot,
+    history,
     scenarios,
     activeScenario,
-    activeScenarioBias,
-    setScenario,
+    compareScenario,
+    activeScenarioID,
+    compareScenarioID,
     loading,
+    historyLoading,
     error,
-    fetchMarketData,
-  };
+    scan,
+    loadSnapshot,
+    loadHistory,
+    selectScenario,
+    selectComparison,
+    exportJSON,
+    initialize,
+  }
 }

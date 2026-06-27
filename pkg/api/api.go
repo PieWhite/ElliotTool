@@ -2,264 +2,403 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"math"
+	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"WaveSight/pkg/elliott"
-	"WaveSight/pkg/model"
+	"WaveSight/internal/domain/wave"
+	"WaveSight/internal/market"
+	"WaveSight/pkg/polygon"
 	"WaveSight/pkg/repository"
-	"WaveSight/pkg/swing"
 )
 
-// CandleFetcher defines the interface for fetching market candles from an external API provider.
+const maxRequestBody = 64 << 10
+
+var symbolPattern = regexp.MustCompile(`^[A-Z][A-Z0-9.\-]{0,14}$`)
+
 type CandleFetcher interface {
-	FetchCandles(ctx context.Context, ticker string, multiplier int, timespan string, from string, to string) ([]model.Candle, error)
+	FetchCandles(ctx context.Context, ticker string, multiplier int, timespan, from, to string) ([]market.Candle, error)
 }
 
-// Handler coordinates request routing, cache lookups, external API fetches, and Elliott Wave scanners.
+type Analyzer interface {
+	Analyze(input wave.AnalyzeInput) wave.AnalysisResult
+}
+
+type HandlerConfig struct {
+	AllowedOrigins     []string
+	MaxConcurrentScans int
+	StaticDir          string
+}
+
 type Handler struct {
 	fetcher  CandleFetcher
-	repo     repository.CandleRepository
-	detector swing.SwingDetector
+	store    repository.Store
+	analyzer Analyzer
+	calendar *market.Calendar
 	router   *http.ServeMux
+	origins  map[string]struct{}
+	slots    chan struct{}
+	queue    chan struct{}
+	limiter  *rateLimiter
+	now      func() time.Time
 }
 
-// NewHandler initializes a new API Handler with ServeMux routing.
-func NewHandler(fetcher CandleFetcher, repo repository.CandleRepository, detector swing.SwingDetector) *Handler {
-	h := &Handler{
-		fetcher:  fetcher,
-		repo:     repo,
-		detector: detector,
-		router:   http.NewServeMux(),
+func NewHandler(fetcher CandleFetcher, store repository.Store, analyzer Analyzer, calendar *market.Calendar, config HandlerConfig) *Handler {
+	if config.MaxConcurrentScans < 1 {
+		config.MaxConcurrentScans = 4
 	}
-	h.registerRoutes()
-	return h
+	origins := make(map[string]struct{}, len(config.AllowedOrigins))
+	for _, origin := range config.AllowedOrigins {
+		origins[origin] = struct{}{}
+	}
+	handler := &Handler{
+		fetcher: fetcher, store: store, analyzer: analyzer, calendar: calendar,
+		router: http.NewServeMux(), origins: origins,
+		slots:   make(chan struct{}, config.MaxConcurrentScans),
+		queue:   make(chan struct{}, config.MaxConcurrentScans*4),
+		limiter: newRateLimiter(30, 10), now: time.Now,
+	}
+	handler.registerRoutes()
+	if config.StaticDir != "" {
+		handler.router.Handle("/", newSPAHandler(config.StaticDir))
+	}
+	return handler
 }
 
-// ServeHTTP satisfies the http.Handler interface by routing HTTP requests.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
+func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	requestID := request.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = fmt.Sprintf("%x", h.now().UnixNano())
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	if origin := request.Header.Get("Origin"); origin != "" {
+		if _, allowed := h.origins[origin]; allowed {
+			writer.Header().Set("Access-Control-Allow-Origin", origin)
+			writer.Header().Set("Vary", "Origin")
+		}
+	}
+	writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
+	if request.Method == http.MethodOptions {
+		writer.WriteHeader(http.StatusNoContent)
 		return
 	}
-	h.router.ServeHTTP(w, r)
+
+	host, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil {
+		host = request.RemoteAddr
+	}
+	if !h.limiter.allow(host, h.now()) {
+		h.writeProblem(writer, requestID, http.StatusTooManyRequests, "rate-limit", "Too many requests", "Please retry later.")
+		return
+	}
+	h.router.ServeHTTP(writer, request)
 }
 
 func (h *Handler) registerRoutes() {
-	h.router.HandleFunc("GET /api/analyze/", h.handleAnalyzeMissing)
-	h.router.HandleFunc("GET /api/analyze/{ticker}", h.handleAnalyze)
+	h.router.HandleFunc("GET /healthz", h.handleHealth)
+	h.router.HandleFunc("POST /api/v2/analyses", h.handleCreateAnalysis)
+	h.router.HandleFunc("GET /api/v2/analyses", h.handleHistory)
+	h.router.HandleFunc("GET /api/v2/analyses/{id}", h.handleGetAnalysis)
 }
 
-func (h *Handler) handleAnalyzeMissing(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "missing ticker parameter", http.StatusBadRequest)
+func (h *Handler) handleHealth(writer http.ResponseWriter, _ *http.Request) {
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write([]byte(`{"status":"ok"}`))
 }
 
-func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
-	ticker := r.PathValue("ticker")
-	if ticker == "" {
-		http.Error(w, "missing ticker parameter", http.StatusBadRequest)
+func (h *Handler) handleCreateAnalysis(writer http.ResponseWriter, request *http.Request) {
+	requestID := writer.Header().Get("X-Request-ID")
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxRequestBody))
+	if err != nil {
+		h.writeProblem(writer, requestID, http.StatusBadRequest, "invalid-body", "Invalid request body", err.Error())
+		return
+	}
+	if err := request.Body.Close(); err != nil {
+		h.writeProblem(writer, requestID, http.StatusBadRequest, "invalid-body", "Invalid request body", err.Error())
+		return
+	}
+	var input AnalysisRequest
+	if err := input.UnmarshalJSON(body); err != nil {
+		h.writeProblem(writer, requestID, http.StatusBadRequest, "invalid-json", "Invalid JSON", err.Error())
+		return
+	}
+	normalized, timeframe, session, asOf, err := h.validateRequest(input)
+	if err != nil {
+		h.writeProblem(writer, requestID, http.StatusBadRequest, "invalid-analysis-request", "Invalid analysis request", err.Error())
 		return
 	}
 
-	timeframe := r.URL.Query().Get("timeframe")
-	if timeframe == "" {
-		timeframe = "1D"
+	select {
+	case h.queue <- struct{}{}:
+		defer func() { <-h.queue }()
+	default:
+		h.writeProblem(writer, requestID, http.StatusServiceUnavailable, "analysis-queue-full", "Analysis capacity reached", "Retry when another scan has completed.")
+		return
+	}
+	select {
+	case h.slots <- struct{}{}:
+		defer func() { <-h.slots }()
+	case <-request.Context().Done():
+		h.writeProblem(writer, requestID, http.StatusRequestTimeout, "cancelled", "Request cancelled", request.Context().Err().Error())
+		return
 	}
 
-	deviationStr := r.URL.Query().Get("deviation")
-	deviation := 0.02 // default ZigZag threshold
-	if deviationStr != "" {
-		var err error
-		deviation, err = strconv.ParseFloat(deviationStr, 64)
-		if err != nil || deviation <= 0 {
-			http.Error(w, "invalid deviation parameter", http.StatusBadRequest)
+	from, to := analysisRange(timeframe, asOf, normalized.LookbackBars)
+	candles, err := h.getOrFetchCandles(request.Context(), normalized.Symbol, timeframe, from, to)
+	if err != nil {
+		var rateLimit *polygon.RateLimitError
+		if errors.As(err, &rateLimit) {
+			h.writeProblem(writer, requestID, http.StatusTooManyRequests, "provider-rate-limit", "Market data rate limit", rateLimit.Error())
 			return
 		}
+		h.writeProblem(writer, requestID, http.StatusBadGateway, "market-data-error", "Market data unavailable", err.Error())
+		return
 	}
-
-	// Convert deviation ratio (e.g. 0.02) to percentage (e.g. 2.0) if <= 1.0
-	var percentDeviation float64
-	if deviation <= 1.0 {
-		percentDeviation = deviation * 100.0
-	} else {
-		percentDeviation = deviation
-	}
-
-	multiplier, timespan, fromDateStr, toDateStr, err := parseTimeframe(timeframe)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid timeframe: %v", err), http.StatusBadRequest)
+	candles = h.calendar.Normalize(candles, timeframe, session)
+	candles = market.TrimToLookback(candles, normalized.LookbackBars)
+	if len(candles) < 20 {
+		h.writeProblem(writer, requestID, http.StatusUnprocessableEntity, "insufficient-data", "Insufficient market data", "At least 20 normalized bars are required.")
 		return
 	}
 
-	// Try loading from SQLite cache first
-	fromTime, _ := time.Parse("2006-01-02", fromDateStr)
-	toTime, _ := time.Parse("2006-01-02", toDateStr)
+	snapshotID, requestHash, dataFingerprint := snapshotHash(normalized, candles)
+	if cached, err := h.store.GetSnapshot(request.Context(), snapshotID); err == nil {
+		h.writeJSON(writer, http.StatusOK, cached)
+		return
+	} else if !errors.Is(err, repository.ErrSnapshotNotFound) {
+		h.writeProblem(writer, requestID, http.StatusInternalServerError, "snapshot-read-error", "Snapshot read failed", err.Error())
+		return
+	}
 
-	var candles []model.Candle
-	var childCandles []model.Candle
-	var errParent error
+	futureBars := h.calendar.FutureBarTimes(
+		time.Unix(candles[len(candles)-1].Time, 0), timeframe, session, 200,
+	)
+	result := h.analyzer.Analyze(wave.AnalyzeInput{
+		Candles: candles, Timeframe: timeframe, Session: session,
+		MaxScenarios: normalized.MaxScenarios, FutureBars: futureBars, TickSize: 0.01,
+	})
 
-	childTimeframe := getChildTimeframe(timeframe)
+	generatedAt := h.now().UTC().Unix()
+	snapshot := AnalysisSnapshot{
+		ID: snapshotID, TheoryVersion: wave.TheoryVersion, EngineVersion: wave.EngineVersion,
+		GeneratedAt: generatedAt, Request: normalized, DataQuality: result.DataQuality,
+		Candles: candles, Scenarios: result.Scenarios, FutureBars: result.FutureBars,
+	}
+	payload, err := snapshot.MarshalJSON()
+	if err != nil {
+		h.writeProblem(writer, requestID, http.StatusInternalServerError, "serialization-error", "Snapshot serialization failed", err.Error())
+		return
+	}
+	metadata := repository.SnapshotMetadata{
+		ID: snapshotID, Symbol: normalized.Symbol, Timeframe: normalized.Timeframe,
+		Session: normalized.Session, AsOf: asOf.Unix(), GeneratedAt: generatedAt,
+		TheoryVersion: wave.TheoryVersion, EngineVersion: wave.EngineVersion,
+		RequestHash: requestHash, DataFingerprint: dataFingerprint,
+	}
+	if err := h.store.SaveSnapshot(request.Context(), metadata, payload); err != nil {
+		h.writeProblem(writer, requestID, http.StatusInternalServerError, "snapshot-write-error", "Snapshot persistence failed", err.Error())
+		return
+	}
+	h.writeJSON(writer, http.StatusCreated, payload)
+}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		candles, errParent = h.getOrFetchCandles(r.Context(), ticker, timeframe, multiplier, timespan, fromDateStr, toDateStr, fromTime, toTime)
-	}()
+func (h *Handler) handleGetAnalysis(writer http.ResponseWriter, request *http.Request) {
+	requestID := writer.Header().Get("X-Request-ID")
+	id := request.PathValue("id")
+	if len(id) != 32 {
+		h.writeProblem(writer, requestID, http.StatusBadRequest, "invalid-snapshot-id", "Invalid snapshot ID", "Snapshot IDs contain 32 hexadecimal characters.")
+		return
+	}
+	payload, err := h.store.GetSnapshot(request.Context(), id)
+	if errors.Is(err, repository.ErrSnapshotNotFound) {
+		h.writeProblem(writer, requestID, http.StatusNotFound, "snapshot-not-found", "Snapshot not found", "No immutable snapshot exists for this ID.")
+		return
+	}
+	if err != nil {
+		h.writeProblem(writer, requestID, http.StatusInternalServerError, "snapshot-read-error", "Snapshot read failed", err.Error())
+		return
+	}
+	h.writeJSON(writer, http.StatusOK, payload)
+}
 
-	if childTimeframe != "" {
-		childMultiplier, childTimespan, _, _, parseErr := parseTimeframe(childTimeframe)
-		if parseErr == nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				childCandles, _ = h.getOrFetchCandles(r.Context(), ticker, childTimeframe, childMultiplier, childTimespan, fromDateStr, toDateStr, fromTime, toTime)
-			}()
+func (h *Handler) handleHistory(writer http.ResponseWriter, request *http.Request) {
+	requestID := writer.Header().Get("X-Request-ID")
+	limit := 20
+	if value := request.URL.Query().Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 100 {
+			h.writeProblem(writer, requestID, http.StatusBadRequest, "invalid-limit", "Invalid history limit", "Limit must be between 1 and 100.")
+			return
 		}
+		limit = parsed
 	}
-
-	wg.Wait()
-
-	if errParent != nil {
-		http.Error(w, errParent.Error(), http.StatusInternalServerError)
+	items, err := h.store.ListSnapshots(request.Context(), limit)
+	if err != nil {
+		h.writeProblem(writer, requestID, http.StatusInternalServerError, "history-read-error", "Analysis history unavailable", err.Error())
 		return
 	}
-	if len(candles) == 0 {
-		http.Error(w, fmt.Sprintf("ticker %s not found or contains no historical data", ticker), http.StatusNotFound)
+	payload, err := (&SnapshotHistory{Items: items}).MarshalJSON()
+	if err != nil {
+		h.writeProblem(writer, requestID, http.StatusInternalServerError, "serialization-error", "History serialization failed", err.Error())
 		return
 	}
-
-	// Run calculations and scanning pipeline using volatility-adaptive swing detection
-	pivots := h.detector.DetectSwings(candles, percentDeviation)
-
-	var childPivots []model.Pivot
-	if len(childCandles) > 0 {
-		childPivots = h.detector.DetectSwings(childCandles, percentDeviation)
-	}
-
-	// ScenarioBundle ranks all patterns into a primary/alternate pair while also
-	// returning the legacy flat slices for backward compatibility.
-	motiveWaves, correctiveWaves, incompleteWaves, scenarios := elliott.ScenarioBundle(pivots, childPivots, timeframe)
-
-	// Compile high-performance Response struct
-	resp := model.AnalysisResponse{
-		Ticker:          ticker,
-		Timeframe:       timeframe,
-		Candles:         candles,
-		Scenarios:       scenarios,
-		MotiveWaves:     motiveWaves,
-		CorrectiveWaves: correctiveWaves,
-		IncompleteWaves: incompleteWaves,
-	}
-
-	// Serialize with generated easyjson code
-	data, err := resp.MarshalJSON()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to serialize JSON response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	h.writeJSON(writer, http.StatusOK, payload)
 }
 
-// parseTimeframe decodes timeframe string into polygon API parameters and dynamic from/to range.
-func parseTimeframe(tf string) (multiplier int, timespan string, from string, to string, err error) {
-	if tf == "" {
-		return 0, "", "", "", fmt.Errorf("empty timeframe")
+func (h *Handler) validateRequest(input AnalysisRequest) (AnalysisRequest, market.Timeframe, market.Session, time.Time, error) {
+	input.Symbol = strings.ToUpper(strings.TrimSpace(input.Symbol))
+	if !symbolPattern.MatchString(input.Symbol) {
+		return input, "", "", time.Time{}, fmt.Errorf("symbol must be a US stock or ETF ticker")
 	}
+	timeframe, ok := market.ParseTimeframe(input.Timeframe)
+	if !ok {
+		return input, "", "", time.Time{}, fmt.Errorf("timeframe must be 1m, 5m, 15m, 1h, 4h, 1D or 1W")
+	}
+	input.Timeframe = string(timeframe)
+	session := market.Session(strings.ToUpper(strings.TrimSpace(input.Session)))
+	if session == "" {
+		session = market.SessionRTH
+	}
+	if session != market.SessionRTH && session != market.SessionExtended {
+		return input, "", "", time.Time{}, fmt.Errorf("session must be RTH or EXTENDED")
+	}
+	input.Session = string(session)
 
-	var digits strings.Builder
-	var suffix strings.Builder
-	for _, r := range tf {
-		if r >= '0' && r <= '9' {
-			digits.WriteRune(r)
-		} else {
-			suffix.WriteRune(r)
-		}
-	}
-
-	if digits.Len() == 0 {
-		return 0, "", "", "", fmt.Errorf("missing multiplier digits in timeframe: %s", tf)
-	}
-
-	multiplier, err = strconv.Atoi(digits.String())
-	if err != nil {
-		return 0, "", "", "", fmt.Errorf("invalid timeframe multiplier: %w", err)
-	}
-
-	unit := strings.ToLower(suffix.String())
-	if unit == "" {
-		unit = "d" // default to day if no unit suffix is present
-	}
-
-	var daysBack int
-	switch unit {
-	case "m", "min", "minute", "minutes":
-		timespan = "minute"
-		daysBack = 30 // fetch 30 days back for minutes
-	case "h", "hour", "hours":
-		timespan = "hour"
-		daysBack = 365 // fetch 1 year back for hours
-	case "d", "day", "days":
-		timespan = "day"
-		daysBack = 365 * 2 // fetch 2 years back for days
-	case "w", "week", "weeks":
-		timespan = "week"
-		daysBack = 365 * 5 // fetch 5 years back for weeks
-	default:
-		return 0, "", "", "", fmt.Errorf("unsupported timeframe unit: %s", unit)
-	}
-
-	now := time.Now()
-	from = now.AddDate(0, 0, -daysBack).Format("2006-01-02")
-	to = now.Format("2006-01-02")
-	return multiplier, timespan, from, to, nil
-}
-
-func getChildTimeframe(parent string) string {
-	p := strings.ToUpper(parent)
-	if p == "1D" || p == "D" || strings.HasSuffix(p, "DAY") || strings.HasSuffix(p, "DAYS") {
-		return "1H"
-	}
-	if p == "1H" || p == "H" || strings.HasSuffix(p, "HOUR") || strings.HasSuffix(p, "HOURS") {
-		return "15m"
-	}
-	if p == "15M" || p == "15MIN" || p == "15MINUTES" || p == "15MINUTE" {
-		return "1m"
-	}
-	return ""
-}
-
-// getOrFetchCandles tries loading candles from SQLite cache first, then falls back to fetching from external client.
-func (h *Handler) getOrFetchCandles(ctx context.Context, ticker, timeframe string, multiplier int, timespan string, fromDateStr, toDateStr string, fromTime, toTime time.Time) ([]model.Candle, error) {
-	candles, err := h.repo.GetCandles(ctx, ticker, timeframe, fromTime.Unix(), toTime.Unix())
-	if err != nil {
-		return nil, fmt.Errorf("database query error: %w", err)
-	}
-
-	if len(candles) == 0 {
-		// Cache miss: fetch from external client
-		candles, err = h.fetcher.FetchCandles(ctx, ticker, multiplier, timespan, fromDateStr, toDateStr)
+	asOf := h.now().UTC()
+	if strings.TrimSpace(input.AsOf) != "" {
+		parsed, err := time.Parse(time.RFC3339, input.AsOf)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch candles: %w", err)
+			return input, "", "", time.Time{}, fmt.Errorf("as_of must be RFC3339: %w", err)
 		}
+		asOf = parsed.UTC()
+	}
+	input.AsOf = asOf.Format(time.RFC3339)
+	if input.LookbackBars <= 0 {
+		input.LookbackBars = timeframe.DefaultLookbackBars()
+	}
+	if input.LookbackBars < 200 || input.LookbackBars > 50_000 {
+		return input, "", "", time.Time{}, fmt.Errorf("lookback_bars must be between 200 and 50000")
+	}
+	if input.MaxScenarios <= 0 {
+		input.MaxScenarios = 5
+	}
+	if input.MaxScenarios > 5 {
+		return input, "", "", time.Time{}, fmt.Errorf("max_scenarios cannot exceed 5")
+	}
+	return input, timeframe, session, asOf, nil
+}
 
-		if len(candles) > 0 {
-			// Write fetched candles to cache
-			if err := h.repo.SaveCandles(ctx, ticker, timeframe, candles); err != nil {
-				return nil, fmt.Errorf("failed to cache candles: %w", err)
-			}
+func (h *Handler) getOrFetchCandles(ctx context.Context, symbol string, timeframe market.Timeframe, from, to time.Time) ([]market.Candle, error) {
+	covered, err := h.store.HasCoverage(ctx, symbol, timeframe, from.Unix(), to.Unix())
+	if err != nil {
+		return nil, err
+	}
+	if !covered {
+		multiplier, timespan := timeframe.ProviderRange()
+		fetched, err := h.fetcher.FetchCandles(
+			ctx, symbol, multiplier, timespan,
+			from.Format("2006-01-02"), to.Format("2006-01-02"),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.store.SaveCandles(ctx, symbol, timeframe, fetched); err != nil {
+			return nil, err
+		}
+		if err := h.store.SaveCoverage(ctx, symbol, timeframe, from.Unix(), to.Unix()); err != nil {
+			return nil, err
 		}
 	}
-	return candles, nil
+	return h.store.GetCandles(ctx, symbol, timeframe, from.Unix(), to.Unix())
+}
+
+func analysisRange(timeframe market.Timeframe, asOf time.Time, lookbackBars int) (time.Time, time.Time) {
+	days := 730
+	switch timeframe {
+	case market.Timeframe1m:
+		days = maxInt(45, lookbackBars/390*2)
+	case market.Timeframe5m:
+		days = maxInt(180, lookbackBars/78*2)
+	case market.Timeframe15m:
+		days = maxInt(540, lookbackBars/26*2)
+	case market.Timeframe1h:
+		days = maxInt(1_825, lookbackBars/7*2)
+	case market.Timeframe4h:
+		days = maxInt(3_650, lookbackBars/2*2)
+	case market.Timeframe1D:
+		days = maxInt(7_300, lookbackBars/252*365)
+	case market.Timeframe1W:
+		days = maxInt(14_600, lookbackBars/52*365)
+	}
+	return asOf.AddDate(0, 0, -days), asOf
+}
+
+func snapshotHash(request AnalysisRequest, candles []market.Candle) (string, string, string) {
+	requestHasher := sha256.New()
+	_, _ = io.WriteString(requestHasher, request.Symbol)
+	_, _ = io.WriteString(requestHasher, "|"+request.Timeframe+"|"+request.Session+"|"+request.AsOf)
+	_, _ = io.WriteString(requestHasher, fmt.Sprintf("|%d|%d", request.LookbackBars, request.MaxScenarios))
+	requestSum := requestHasher.Sum(nil)
+	requestHash := hex.EncodeToString(requestSum[:16])
+
+	candleHasher := sha256.New()
+	var buffer [8]byte
+	for _, candle := range candles {
+		binary.LittleEndian.PutUint64(buffer[:], uint64(candle.Time))
+		_, _ = candleHasher.Write(buffer[:])
+		for _, value := range []float64{candle.Open, candle.High, candle.Low, candle.Close, candle.Volume} {
+			binary.LittleEndian.PutUint64(buffer[:], math.Float64bits(value))
+			_, _ = candleHasher.Write(buffer[:])
+		}
+	}
+	candleSum := candleHasher.Sum(nil)
+	dataFingerprint := hex.EncodeToString(candleSum[:16])
+
+	hasher := sha256.New()
+	_, _ = io.WriteString(hasher, requestHash+"|"+dataFingerprint)
+	_, _ = io.WriteString(hasher, "|"+wave.TheoryVersion+"|"+wave.EngineVersion)
+	sum := hasher.Sum(nil)
+	return hex.EncodeToString(sum[:16]), requestHash, dataFingerprint
+}
+
+func (h *Handler) writeProblem(writer http.ResponseWriter, requestID string, status int, problemType, title, detail string) {
+	problem := Problem{
+		Type: "https://wavesight.app/problems/" + problemType, Title: title,
+		Status: status, Detail: detail, RequestID: requestID,
+	}
+	payload, err := problem.MarshalJSON()
+	if err != nil {
+		http.Error(writer, title, status)
+		return
+	}
+	h.writePayload(writer, status, "application/problem+json", payload)
+}
+
+func (h *Handler) writeJSON(writer http.ResponseWriter, status int, payload []byte) {
+	h.writePayload(writer, status, "application/json", payload)
+}
+
+func (h *Handler) writePayload(writer http.ResponseWriter, status int, contentType string, payload []byte) {
+	writer.Header().Set("Content-Type", contentType)
+	writer.WriteHeader(status)
+	_, _ = writer.Write(payload)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

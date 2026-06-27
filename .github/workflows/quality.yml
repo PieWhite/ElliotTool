@@ -1,0 +1,63 @@
+name: WaveSight quality
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Formatting
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          test -z "$unformatted"
+      - name: Static analysis
+        run: go vet ./...
+      - name: Unit and integration tests
+        run: go test ./...
+      - name: Race detector
+        run: go test -race -short ./...
+      - name: Wave-domain coverage
+        run: |
+          go test -coverprofile coverage.out ./internal/domain/wave
+          go run ./cmd/coveragecheck -profile coverage.out -threshold 90
+      - name: Performance acceptance
+        env:
+          WAVESIGHT_PERF_TEST: '1'
+        run: go test -run TestEnginePerformanceEnvelopes -count=1 ./internal/domain/wave
+      - name: Reproducible easyjson
+        run: |
+          go install github.com/mailru/easyjson/easyjson@v0.9.2
+          easyjson -all internal/market/types.go
+          easyjson -all internal/domain/wave/types.go
+          easyjson -all pkg/polygon/client.go
+          easyjson -all pkg/repository/repository.go
+          easyjson -all pkg/api/types.go
+          git diff --exit-code
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

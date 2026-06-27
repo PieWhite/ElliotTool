@@ -14,7 +14,6 @@ const (
 	fractalValidationPenalty = 0.10
 )
 
-// ScenarioBundle verwerkt alle berekende data en weegt scenario's evenredig.
 func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimeframe string) (motives []model.MotiveWave, correctives []model.CorrectiveWave, incompletes []model.IncompleteWave, pair *model.ScenarioPair) {
 	var parentMotives []model.MotiveWave
 	var parentCorrectives []model.CorrectiveWave
@@ -163,11 +162,7 @@ func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimef
 		}
 	}
 
-	pair = &model.ScenarioPair{
-		Primary:   primaryScenario,
-		Alternate: alternateScenario,
-	}
-
+	pair = &model.ScenarioPair{Primary: primaryScenario, Alternate: alternateScenario}
 	return motives, correctives, incompletes, pair
 }
 
@@ -236,7 +231,6 @@ func correctiveToStructure(cw model.CorrectiveWave) model.WaveStructure {
 	}
 
 	const correctiveBaseScore = 0.68
-
 	return model.WaveStructure{
 		Type:            typeName,
 		Pivots:          pivots,
@@ -296,6 +290,9 @@ func findBestChain(candidates []model.WaveStructure) []model.WaveStructure {
 		nextOpt[i] = -1
 	}
 
+	isMotive := func(t string) bool { return strings.HasPrefix(t, "MOTIVE_") }
+	isCorrective := func(t string) bool { return strings.HasPrefix(t, "CORRECTIVE_") }
+
 	for i := n - 1; i >= 0; i-- {
 		skipScore := 0.0
 		if i+1 < n {
@@ -306,9 +303,25 @@ func findBestChain(candidates []model.WaveStructure) []model.WaveStructure {
 		bestNextIdx := -1
 		iEnd := candidates[i].Pivots[len(candidates[i].Pivots)-1].Time
 
-		// Sluit geen paden uit; scan de volledige array voor cumulatieve evaluatie
 		for j := i + 1; j < n; j++ {
 			if candidates[j].Pivots[0].Time >= iEnd {
+				// --- STRUKTURELE OPEENVOLGINGSVALIDATIE (Frost & Prechter) ---
+				typeI := candidates[i].Type
+				typeJ := candidates[j].Type
+
+				isValidSequence := false
+				if isMotive(typeI) && (isCorrective(typeJ) || typeJ == "INCOMPLETE_123") {
+					isValidSequence = true
+				} else if isCorrective(typeI) && (isMotive(typeJ) || typeJ == "INCOMPLETE_123") {
+					isValidSequence = true
+				} else if typeI == "INCOMPLETE_123" && isCorrective(typeJ) {
+					isValidSequence = true
+				}
+
+				if !isValidSequence {
+					continue
+				}
+
 				currentPathScore := candidates[i].ConfidenceScore + dp[j]
 				if currentPathScore > bestTakeScore {
 					bestTakeScore = currentPathScore
@@ -336,11 +349,9 @@ func findBestChain(candidates []model.WaveStructure) []model.WaveStructure {
 			curr = nextOpt[curr]
 		}
 	}
-
 	return bestChain
 }
 
-// getChainConfidence weegt de complexiteit van de golven evenredig mee (Gemiddelde + Motive-Bonus)
 func getChainConfidence(chain []model.WaveStructure) float64 {
 	if len(chain) == 0 {
 		return 0.0
@@ -349,7 +360,7 @@ func getChainConfidence(chain []model.WaveStructure) float64 {
 	totalScore := 0.0
 	for _, ws := range chain {
 		if strings.HasPrefix(ws.Type, "MOTIVE_") {
-			totalScore += ws.ConfidenceScore * 1.25 // Beloon grote 5-wave motive trends
+			totalScore += ws.ConfidenceScore * 1.25
 		} else {
 			totalScore += ws.ConfidenceScore
 		}

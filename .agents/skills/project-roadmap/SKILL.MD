@@ -1,126 +1,132 @@
-# MASTER SYSTEM CONTEXT & COMPLETE ROADMAP: PROJECT WAVESIGHT
+# MASTER SYSTEM CONTEXT & COMPREHENSIVE FRACTAL ROADMAP: PROJECT WAVESIGHT
 
-## 1. Project Overview & Architecture
-- **Project Name:** WaveSight (High-Performance Automated Elliott Wave & Fibonacci Analysis App).
-- **Current Phase:** Phase 2 (The Frost & Prechter Advanced Theoretical Engine).
-- **Core Philosophy:** Extreme performance, zero fluff, TDD, DIP, memory optimization, and strict adherence to the *Frost & Prechter Elliott Wave Principle*.
+## 1. Project Overzicht & Visie
+WaveSight is een ultra-high-performance, geautomatiseerde analyse-engine voor Elliott Wave en Fibonacci-fractals. Het doel van het systeem is het elimineren van menselijke subjectiviteit bij het tellen van golven door realtime marktdata (koersdata) te ontleden in wiskundig gevalideerde, recursieve boomstructuren conform de wetten van de *R.N. Elliott Wave Principle*.
 
-## 2. Tech Stack & Architectural Decisions
-- **Backend:** Go (Golang 1.22+) using native method-based routing (`http.NewServeMux()`).
-- **JSON Serialization:** `mailru/easyjson` code generation.
-- **Database:** SQLite via `github.com/glebarez/go-sqlite` (Pure Go, CGO-free).
-- **Frontend:** Vue 3 (Composition API, `<script setup lang="ts">`, Vite), `shallowRef` for raw arrays to prevent lag.
-- **Charting:** TradingView Lightweight Charts (`lightweight-charts`).
+### Kernfilosofie:
+- **Absolute Recursie:** De markt is niet plat. Het systeem verwerkt koersdata als een hiërarchische boomstructuur (Fractal Tree) waarin grotere trends (Parent Waves) verplicht worden gevalideerd door de interne patronen van een lagere graad (Child Sub-waves).
+- **Wiskundige Hardheid:** Strikt onderscheid tussen *Kardinale Wetten* (nul-tolerantie, directe uitsluiting bij overtreding) en *Fibonacci Richtlijnen* (probabilistische scoring via vloeibare linear decay zones).
+- **Architectonische Zuiverheid:** Extreme geheugenoptimalisatie (O(N) single-pass execution), nul onnodige heap-allocaties in de Go-pijplijn en asynchrone parallelle dataverwerking.
 
 ---
 
-## 3. Phase 1 Completion Status
-- [x] **Step 1 - 3:** Polygon API Fetcher, SQLite Caching, ZigZag State Machine.
-- [x] **Step 4:** Basic Motive (5) & Corrective (ABC) Rules Engine.
-- [x] **Step 5 - 7:** High-Performance REST API & Vue 3 Canvas TargetBox Rendering.
+## 2. Tech Stack & Systeemarchitectuur
+- **Backend Core:** Go (Golang 1.22+) – Maakt exclusief gebruik van native method-based routing via `http.NewServeMux()`. Systeemonderdelen communiceren via Dependency Inversion (DIP).
+- **High-Speed Serialisatie:** `mailru/easyjson` code-generatie om reflectie-vrije, bliksemsnelle JSON-Marshalling van diep geneste boomstructuren te garanderen.
+- **Database Caching:** SQLite via `github.com/glebarez/go-sqlite` (Pure Go, CGO-free) voor performante opslag en indexering van historische kaarsdata.
+- **Frontend Canvas:** Vue 3 (Composition API, `<script setup lang="ts">`, Vite) – Maakt gebruik van `shallowRef` en `raw arrays` om CPU-lag bij duizenden actieve datapunten te elimineren.
+- **Grafische Grafiek-rendering:** TradingView Lightweight Charts (`lightweight-charts`) met op maat gemaakte Canvas Primitives voor schuine geometrische projecties en doelvakken.
 
 ---
 
-## 4. Phase 2: Advanced Frost & Prechter Implementation (CURRENT ROADMAP)
+## 3. Uitputtende Catalogus van Elliott Wave Structuren
+De engine valideert de markt tegen de complete theoretische catalogus. Elk patroon is gedefinieerd met harde wiskundige randvoorwaarden.
 
-### [x] Step 8: Advanced Motive Structures (Diagonals & Truncations)
-- **Objective:** Upgrade the `MotiveWave` scanner to recognize variations of the 5-wave impulse.
-- **Leading/Ending Diagonals (Wedges):** Implement logic where Rule 3 (Wave 4 cannot overlap Wave 1) is safely ignored IF the structure converges into a wedge shape (Wave 1 > Wave 3 > Wave 5).
-- **Truncations:** Allow Wave 5 to terminate below the peak of Wave 3, provided the sub-waves and Fibonacci extensions of Wave 3 mathematically justify exhaustion.
-- **Incomplete Motives (1-2-3):** Identify developing impulse structures (waves 1, 2, and 3 completed) and project the predictive path for waves 4 and 5.
+### 3.1 Motive Waves (Trendgolven - Cijfernotatie 1-2-3-4-5)
+Motive waves bewegen áltijd in de richting van de grotere trend van één graad groter.
 
-### [x] Step 9: Advanced Corrective Structures (Triangles & Complex Threes)
-- **Objective:** Expand `CorrectiveWave` beyond standard ZigZags and Flats.
-- **Triangles (ABCDE):** Implemented a 5-pivot sideways scanner (`evaluateTriangle`) with strict contracting bounds (|A|>|B|>|C|>|D|>|E|). Both BULLISH (Low start) and BEARISH (High start) variants supported. `WD`/`WE` pivot fields added to model.
-- **Complex Corrections (WXY):** Implemented `evaluateWXY` to detect Double Threes via an 8-pivot window. Validates W-wave (ZigZag/Flat), X-wave retracement ≤ 90%, Y-wave (ZigZag/Flat), and net directional continuation. `WX` pivot field added to model.
-- **Domain Model:** `CorrectiveWave` extended with `WD *Pivot`, `WE *Pivot`, `WX *Pivot` (all `omitempty`). `type` field now documents `"TRIANGLE"` and `"WXY"`.
-- **easyjson:** Regenerated `corrective_wave_easyjson.go` after model changes.
-- **TDD:** 9 new table-driven tests (4 Triangle, 4 WXY, 1 edge case). All 30 tests pass. Benchmarks show ≤4 allocations per call (pre-allocated result slice only; scanning loops are zero-allocation).
-- **Frontend Sync (Step 8 backfill):** `MotiveWave` TS interface gains `is_diagonal`/`is_truncated`. `IncompleteWave` interface added with `target_box`. `AnalysisResponse` gains `incomplete_waves`. `ChartWidget.vue` renders diagonals as dashed, truncated W5 as `"5T"`, incomplete waves as cyan dotted lines with teal target boxes, Triangles in teal, WXY in indigo. `BoxPrimitive` extended with optional fill/stroke color params.
+#### A. Motive Impulse (Klassieke Impulsgolf)
+- **Interne Fractal Structuur:** 5-3-5-3-5 (Golven 1, 3 en 5 zijn zelf Motive; Golven 2 en 4 zijn Corrective).
+- **Kardinale Wet 1:** Wave 2 retraceert nooit meer dan 100% van Wave 1.
+- **Kardinale Wet 2:** Wave 3 is wiskundig nooit de kortste van de drie actieve golven (1, 3 en 5).
+- **Kardinale Wet 3:** Wave 4 mag het prijsgebied van Wave 1 nooit betreden of overlappen (prijslimiet nul-tolerantie).
+- **Extensie Richtlijn:** Minimaal één van de actieve golven (1, 3 of 5) moet een duidelijke extensie vertonen ($\ge 1.618$ van de basisschaal). Als Wave 3 extended is, zijn Wave 1 en 5 vaak nagenoeg gelijk in prijslengte of verhouden zich tot $0.618$.
+- **Alternation Richtlijn:** Wave 2 en Wave 4 moeten van elkaar afwijken in diepte en complexiteit. (Scherpe vs. Zijwaartse/Complexe correctie).
+- **Geometrische Channeling:** Een rechte trendlijn over de eindpunten van Wave 2 en Wave 4, geprojecteerd als een parallelle lijn vanaf de top van Wave 3, definieert de exacte schuine landingszone voor Wave 5.
 
-### [x] Step 10: The Probabilistic Engine (Primary vs. Alternate Counts)
-- **Objective:** Transition from returning a single "truth" to returning an array of viable scenarios.
-- **Model (`pkg/model/response.go`):** Added `WaveStructure` (type, pivots, purple_boxes, confidence_score), `AnalysisScenario` (bias, confidence, structures), and `ScenarioPair` (primary, alternate). `AnalysisResponse` gains `Scenarios *ScenarioPair`. Legacy flat arrays kept with `omitempty`. All new structs annotated `//easyjson:json`; `response_easyjson.go` regenerated.
-- **Scorer (`pkg/elliott/scorer.go`):** `ScenarioBundle` function delegates to `MatchMotiveWaves`, `MatchCorrectiveWaves`, and `MatchIncompleteWaves` without re-implementing scanning logic. Converts results to `WaveStructure`, sorts by confidence descending, and emits primary (highest-confidence) + alternate (second-highest, or inverse-bias placeholder with confidence 0.0 when only 1 structure found).
-- **API (`pkg/api/api.go`):** Wired `ScenarioBundle` into `handleAnalyze`; response carries both `scenarios` object and legacy flat arrays simultaneously.
-- **TDD (`pkg/elliott/scorer_test.go`):** 4 table-driven tests: two-wave ordering, single-wave inverse fallback, confidence-ordering invariant (primary ≥ alternate), empty-input edge case. All 34 tests pass.
-- **Frontend Interfaces (`useMarketData.ts`):** Added `WaveStructure`, `AnalysisScenario` TypeScript interfaces. `AnalysisResponse` gains `scenarios`. Composable exposes `scenarios` shallowRef, `activeScenario` computed, `activeScenarioBias` ref, and `setScenario` helper.
-- **UI Toggle (`App.vue`):** Added a 5-column grid with a **Scenario View** toggle column containing ▲ BULLISH / ▼ BEARISH buttons. Active BULLISH = green border/bg, active BEARISH = red border/bg. Confidence badge shows % for each scenario dynamically.
-- **Chart Rendering (`ChartWidget.vue`):** Accepts optional `activeScenario?: AnalysisScenario` prop. When provided, `renderScenarioStructures` renders each `WaveStructure`'s pivot sequence as a colour-coded line (motive = green/red solid, corrective = amber/teal/indigo dashed, incomplete = cyan dotted) and attaches `purple_boxes`. Falls back to legacy flat array rendering when no scenario is active. Watch list includes `activeScenario` so toggling immediately redraws.
+#### B. Leading Diagonal (Aanvangende Diagonaal)
+- **Locatie:** Komt uitsluitend voor als Wave 1 van een impuls of Wave A van een zigzag.
+- **Interne Fractal Structuur:** Kan zowel 5-3-5-3-5 als 3-3-3-3-3 zijn.
+- **Kardinale Regels:** Wave 2 retraceert niet meer dan 100% van Wave 1. Wave 3 is niet de kortste.
+- **Geometrische Afwijking:** Wave 4 overlap met Wave 1 is hier verplicht.
+- **Converging Sub-type:** De golven vernauwen zich wiskundig: $\text{Lengte W1} > \text{Lengte W3} > \text{Lengte W5}$ en $\text{Lengte W2} > \text{Lengte W4}$.
+- **Expanding Sub-type:** De golven verruimen zich wiskundig: $\text{Lengte W1} < \text{Lengte W3} < \text{Lengte W5}$.
 
-### [x] Step 11: Comprehensive Purple Box Matrix (Target Zones)
-- **Objective:** Calculate dynamic Purple Boxes for *every* developing wave based on the uploaded `WaveRatios.pdf`.
-- **Wave 3 Targets:** Added `calculateWave3TargetBoxes` for 1.618, 2.618, and 4.236 extensions of Wave 1.
-- **Wave 4 Targets:** Box at 38.2% retracement of Wave 3, terminating within the territory of the preceding 4th wave of one lesser degree.
-- **Wave 5 Targets:** Completed motive waves now emit `purple_boxes` with three F&P target zones: 100% of Wave 1, 61.8% of net Start-to-Wave-3, and 161.8% of Wave 1.
-- **Wave C Targets:** Corrective ABC/WXY structures now emit `purple_boxes` at 100% and 161.8% of Wave A.
-- **Domain Model:** `MotiveWave.PurpleBox` replaced with `MotiveWave.PurpleBoxes []TargetBox`; `CorrectiveWave` gains `PurpleBoxes []TargetBox`. `motive_wave_easyjson.go` and `corrective_wave_easyjson.go` regenerated.
-- **Scorer:** Scenario `WaveStructure.PurpleBoxes` now receives all motive/corrective target boxes.
-- **Frontend:** TypeScript contracts use `purple_boxes`; `ChartWidget.vue` renders every motive, corrective, and scenario target box as a separate `BoxPrimitive`.
-- **TDD:** Added matrix coverage for textbook bullish motive Wave 5 targets and textbook bearish ZigZag Wave C targets. `go test ./pkg/elliott/... -v` passes.
+#### C. Ending Diagonal (Eindigende Diagonaal / Wedge)
+- **Locatie:** Komt uitsluitend voor als Wave 5 van een impuls of Wave C van een zigzag/flat. Kondigt een felle trendomslag aan.
+- **Interne Fractal Structuur:** Strikt 3-3-3-3-3 (Elke sub-poot is verplicht een corrigerende ABC-vorm).
+- **Geometrische Afwijking:** Wave 4 overlap met Wave 1 is verplicht. Vertoont een wig-vorm (Converging of Expanding).
 
-### [x] Step 12: Multi-Degree Fractal Validation (Waves within Waves)
-- **Objective:** Apply the fractal nature of Elliott Wave.
-- **Logic:** A macro Wave 1 on a 1D chart is only valid if the `elliott` package can break it down into a smaller 5-wave motive structure on the 1H chart.
-- **Implementation:**
-  - Designed a concurrent validation layer that scans parent and child timeframes in parallel using goroutines.
-  - Implemented relative time tolerance (25%) and price tolerance (20%) to match parent Wave 1/incomplete W1 with child 5-wave motive substructures.
-  - Configured confidence scoring adjustments: confirmed waves receive a `+0.15` boost (capped at `1.0`), and unconfirmed waves receive a `-0.30` penalty, resulting in rejection if score falls below `0.60`.
-  - Concurrently fetches parent and child candles in the API router for `"1D" -> "1H"`, `"1H" -> "15m"`, and `"15m" -> "1m"` pairs.
-  - Preserved 100% API and frontend compatibility while providing fully validated multi-degree scenarios.
-
-### [x] Step 13: Multi-Degree Labeling & Degree Hierarchy Rendering
-- **Objective:** Distinguish wave degrees visually and structurally per Frost & Prechter.
-- **Logic:** Waves within waves are labeled with distinct degree notations (e.g. Primary `①`, Intermediate `(1)`, Minor `1`, Minute `i`, Minuette `[i]`, Subminuette `(i)`).
-- **Implementation:**
-  - **Backend Models:** Added `degree` metadata field to `MotiveWave`, `CorrectiveWave`, `IncompleteWave`, and `WaveStructure` models.
-  - **JSON Serialization:** Re-generated `easyjson` files (`motive_wave_easyjson.go`, `corrective_wave_easyjson.go`, `incomplete_wave_easyjson.go`, `response_easyjson.go`) to output the `degree` field.
-  - **Scoring & Validation:** Updated `ScenarioBundle` in `scorer.go` to accept a `parentTimeframe` parameter. Maps the timeframe to appropriate Elliott Wave degrees (e.g. 1D -> MINOR, 1H -> MINUTE, 15m -> MINUETTE). Propagates the mapped `Degree` to all waves and `WaveStructure` responses.
-  - **Frontend Refactoring:** Updated TypeScript definitions in `useMarketData.ts` to carry the optional `degree` parameter. Refactored `ChartWidget.vue` to format wave label markers using Frost & Prechter notations (e.g. primary circled, intermediate parenthesized, minor plain, minute lowercase, minuette bracketed lowercase, subminuette parenthesized lowercase) and color-code both the lines and markers accordingly.
-  - **Verification:** Added TDD tests validating degree hierarchy mapping in `scorer_test.go` and verified clean frontend production builds.
-
-### [x] Step 14: Chronological Chaining & Hierarchical Wave Nesting (Complete Chart Analysis)
-- **Objective:** Assemble local isolated wave structures into a continuous, multi-degree nested chart analysis.
-- **Implementation:**
-  - **Hierarchical Nesting:** Refactored `hasValidSubwave` to `findValidSubwave`, which returns the matching child structure that validated the parent wave. Retained these matched child structures and associated them with their parents in a sub-wave lookup map inside `ScenarioBundle`.
-  - **Chronological Chaining (Interval Scheduling):** Designed and implemented a dynamic programming (DP) interval scheduling algorithm (`findBestChain`) running in $O(N^2)$ time with zero recursion overhead. It groups waves into Bullish and Bearish candidate pools and finds the optimal chain of mutually non-overlapping wave structures that maximizes the sum of confidence scores.
-  - **Scenario Assembly:** Refactored scenario compilation to output the entire Bullish chain (with its nested child sub-waves) as the Bullish scenario and the Bearish chain (with its nested child sub-waves) as the Bearish scenario. The higher confidence chain becomes `Primary`, and the other becomes `Alternate`.
-  - **Frontend Verification:** Checked and confirmed that `ChartWidget.vue`'s scenario rendering handles rendering of multiple lines, markers, and target boxes concurrently with degree-specific styling, producing a complete, nested, and chained chart analysis.
-  - **TDD:** Added `TestChronologicalChainingAndNesting` in `scorer_test.go` verifying correct DP assembly of a motive-corrective-motive chain with a nested sub-wave. All tests pass successfully.
-
-### [ ] Step 15: Wave Detection Refinement & Scenario Visual Completeness (Complete Chart Analysis)
-- **Objective:** Refine backend scoring rules and frontend charting elements so motive (1-5), incomplete (1-2-3), and corrective (ABC/Triangle/WXY) waves along with their Purple Box target zones render comprehensively and look like a professional multi-degree chart analysis.
-- **Backend Scoring & Validation Adjustments:**
-  - Soften the fractal validation penalty: instead of hard-rejecting macro waves when child validation is missing or slightly offset, apply a milder penalty or allow a validation tier system to preserve high-scoring macro motive structures.
-  - Add configuration toggles or parameters for deviation adjustment so that users can control scan sensitivity directly.
-- **Frontend & Canvas Rendering Completeness:**
-  - Update `renderScenarioStructures` in `ChartWidget.vue` to map distinct styling parameters per structure type (e.g., solid lines for motive impulses, dashed lines for diagonals/wedges, dotted lines for incomplete structures).
-  - Add color parameterization for `BoxPrimitive` targets inside scenario view: green-tinted boxes for bullish Wave 3/5 projections, red-tinted for bearish, and teal for incomplete Wave 4 target boxes.
-  - Implement marker collision prevention (e.g., vertical offsets or stacking) to keep labels clear and legible when parent and child waves share the same pivot timestamps.
+#### D. Truncated Fifth (Afgeknotte Vijfde Golf)
+- **Voorwaarde:** Wave 5 slaagt er wiskundig niet in om voorbij het uiterste prijsextreem van Wave 3 te breken.
+- **Validatie-eis:** Mag alleen als valide worden beschouwd door de scorer als Wave 3 een extreme overextensie vertoont ($\ge 2.62$ van Wave 1).
 
 ---
 
-## 5. Target JSON Contract Strategy (Phase 2 Upgrade)
-The API layer will be upgraded to serve probabilistic scenarios:
-```json
-{
-  "ticker": "AAPL",
-  "timeframe": "1D",
-  "candles": [ ... ],
-  "scenarios": {
-    "primary": {
-      "bias": "BULLISH",
-      "confidence": 0.94,
-      "structures": [
-        { "type": "MOTIVE_IMPULSE", "pivots": [...], "purple_boxes": [...] }
-      ]
-    },
-    "alternate": {
-      "bias": "BEARISH",
-      "confidence": 0.76,
-      "structures": [
-        { "type": "CORRECTIVE_ZIGZAG", "pivots": [...], "purple_boxes": [...] }
-      ]
-    }
+### 3.2 Corrective Waves (Correctiegolven - Letternotatie A-B-C / W-X-Y-X-Z)
+Corrective waves bewegen áltijd tegen de richting van de grotere trend van één graad groter in.
+
+#### A. Zigzag Correcties (Scherpe, Diepe Correcties)
+- **Single Zigzag (ABC):**
+  - **Interne Fractal Structuur:** Strikt 5-3-5. (Wave A is een impuls, B is een 3-wave correctie, C is een impuls).
+  - **Wiskundige Ratio's:** Wave B retraceert tussen 38.2% en 61.8% van Wave A. Wave C reikt tot $0.62\times, 1.00\times, \text{of } 1.62\times$ van de lengte van Wave A.
+- **Double Zigzag (WXY) & Triple Zigzag (WXYXZ):**
+  - **Doel:** Wordt gevormd als een Single Zigzag onvoldoende prijs-correctie heeft opgeleverd.
+  - **Kardinale Opeenvolging:** Wave X en Wave X2 fungeren als corrigerende verbindingslussen (mogen zelf een kleine zigzag zijn) en mogen niet meer dan 90% van de voorgaande golf heroveren.
+
+#### B. Flat Correcties (Zijwaartse Correcties)
+- **Regular Flat:**
+  - **Interne Fractal Structuur:** Strikt 3-3-5. (Wave A en B zijn 3-wave correcties, Wave C is een 5-wave impuls/diagonaal).
+  - **Wiskundige Ratio's:** Wave B eindigt nagenoeg aan het startpunt van Wave A (90% tot 105% retracement). Wave C eindigt net iets voorbij het eindpunt van Wave A.
+- **Expanded Flat (Irregular Flat):**
+  - **Wiskundige Ratio's:** Wave B breekt vurig voorbij het startpunt van Wave A ($105\% \text{ tot } 138.2\%$). Wave C maakt vervolgens een gigantische beweging en eindigt ver voorbij het eindpunt van Wave A ($1.236\times \text{ tot } 1.62\times$ van Wave A).
+- **Running Flat:**
+  - **Wiskundige Ratio's:** Wave B breekt voorbij het startpunt van Wave A, maar Wave C is uitgeput en slaagt er niet in om het eindpunt van Wave A te bereiken (faalt halverwege).
+
+#### C. Triangles (Driehoeken - Letternotatie a-b-c-d-e)
+- **Algemene Regels:** Bestaan uit 5 overlappende golven met een interne 3-3-3-3-3 structuur. Mogen uitsluitend voorkomen op de positie van Wave 4, Wave B of de finale Wave Y/Z van een combinatie. **Nooit** als Wave 2 of Wave W.
+- **Contracting Triangle:** De trendlijnen getrokken over de toppen $A-C$ en bodems $B-D$ convergeren (lopen wiskundig naar elkaar toe). Ratios van opeenvolgende legs liggen rond de $0.618$.
+- **Barrier Triangle:** Gelijk aan Contracting, maar de $B-D$ lijn (of $A-C$ lijn) loopt nagenoeg 100% horizontaal, wat een strakke psychologische steun/weerstand vormt.
+- **Expanding Triangle:** De trendlijnen divergeren (lopen wiskundig uit elkaar). Elke opeenvolgende leg is groter dan de vorige ($A < B < C < D < E$).
+- **Sferische Sub-types:** Symmetrisch, Ascending (stijgend), Descending (dalend).
+
+#### D. Complexe Combinaties (Double Threes & Triple Threes)
+- **Structuur:** Horizontale combinaties gelabeld als $W-X-Y$ en $W-X-Y-X-Z$.
+- **Wiskundige Restrictie:** Combineren Flats, Zigzags en Driehoeken. Een `TRIANGLE` mag conform Prechter **nooit** op de positie van Wave W verschijnen; een driehoek mag uitsluitend optreden als de absolute terminale afsluiting (Wave Y of Wave Z).
+
+---
+
+## 4. Gerealiseerde Status & Volledig Fractale Architectuur
+
+### [x] Fase 1: Vloeibare Fibonacci & Statistische Zones (`elliott.go`)
+- Harde scheiding tussen kardinale wetten (directe uitsluiting bij overtreding van Wave 2 of Wave 3 limieten) en statistische eSignal-verhoudingen.
+- Implementatie van `scoreWave4Continual` om een vloeibaar continuum tussen `0.24` en `0.62` te scoren, waarbij de zone `0.30 - 0.50` de maximale score (`1.0`) krijgt.
+- Co-existentie check ingebouwd voor Wave 5 targets: berekent gelijktijdig de verhoudingen tot Wave 1 én de netto afstand van $0\rightarrow3$.
+
+### [x] Fase 2: Geometrische Elliott Parallel Channeling (`elliott.go`)
+- Dynamische berekening van de richtingscoëfficiënt (helling $m$) van de trendlijn tussen Pivot 2 en Pivot 4.
+- Projectie van parallelle schuine kanalen vanaf de toppen van Wave 1 en Wave 3.
+- Bounding-box validatie om schuine kanaalvoorwaarden te vertalen naar frontend-vriendelijke rechthoekige coördinaten.
+
+---
+
+## 5. Fase 3 & 4 Master Roadmap: De Fractal Tree Engine (Vervolgstappen)
+
+### [x] Stap 1: Structuur-gestuurde Dynamic Swing Detection Engine (`pkg/api/api.go` & `pkg/swing/` of `pkg/elliott/`)
+- **Probleem:** Het huidige project leunt zwaar op een starre percentage-gebaseerde ZigZag-filterheuristiek (zowel in de huidige code als de eerdere plannen voor multi-depth ZigZag). In de *Elliott Wave Principle* van Frost & Prechter bestaat er echter geen percentage-gebaseerde drempelwaarde om golven te identificeren. Golven zijn schaalvrij (fractal) en worden gedefinieerd door hun interne sub-golfstructuren en onderlinge Fibonacci-verhoudingen. Vaste percentages veroorzaken data-hongersnood voor kleine golven en introduceren ruispivots bij grote golven, wat de recursieve fractal-analyse saboteert.
+- **Oplossing:** Vervang de ZigZag-heuristiek volledig door een **Structuur-gestuurde Dynamic Swing Detection Engine**:
+  1. **Ontkoppeling via Dependency Inversion:** Introduceer een abstracte interface `SwingDetector` of `PivotGenerator` in `pkg/model` zodat de API-laag (`api.go`) niet direct gekoppeld is aan een specifieke swing-heuristiek.
+  2. **Raw Candle Swing Detection:** Genereer kandidaat-pivots puur op basis van lokale kaars-extrema (peaks/troughs) om alle potentiële trendbreuken te behouden.
+  3. **Volatiliteit-Adaptieve Filtering:** Gebruik markt-adaptieve indicatoren zoals ATR (Average True Range) of Standard Deviation om ruis dynamisch te dempen, in plaats van vaste percentages.
+  4. **Structuur-gestuurde Filtering (Fractal Validation):** Laat de uiteindelijke pivot-selectie valideren door de Elliott Wave regels zelf. Een pivot is pas valide als deze deel uitmaakt van een wiskundig sluitende sub-golf (bijv. Wave 2 retracement limit, Wave 3 length constraint). Dit garandeert een zuivere, theoretische opbouw van de Fractal Tree.
+
+### [x] Stap 2: Recursieve, Gêneste Go-Modellen (`pkg/model/`)
+- **Probleem:** De huidige Go-structs en JSON-contracts zijn volledig plat en lineair. Ze kunnen geen boomstructuur vasthouden.
+- **Oplossing:** Wijzig `response.go` en `motive_wave.go` / `corrective_wave.go`. Introduceer een recursieve, zelfverwijzende array-structuur:
+  ```go
+  type WaveStructure struct {
+      Type            string          `json:"type"`             // bijv. "MOTIVE_IMPULSE", "CORRECTIVE_ZIGZAG"
+      Degree          string          `json:"degree"`           // "MINOR", "MINUTE", etc.
+      ConfidenceScore float64         `json:"confidence_score"`
+      Pivots          []Pivot         `json:"pivots"`           // De ankerpunten van deze specifieke golf
+      SubStructures   []WaveStructure `json:"sub_structures"`   // NEW: De interne geneste sub-golven (Fractal Tree Children)
+      PurpleBoxes     []TargetBox     `json:"purple_boxes"`
   }
-}
+  ```
+
+### [ ] Stap 3: Visualisatie & Future Purple Boxes Rendering (`frontend/src/components/ChartWidget.vue` & `BoxPrimitive.ts`)
+- **Probleem 1 (Visualisatie):** Doordat geneste child-golven direct over de segmenten van hun parent-golven heen worden getekend, ontstaat er een optische verwarring waarbij de lijnen in elkaar overlopen. We willen ze visueel scheiden.
+- **Probleem 2 (Purple Boxes):** Prognose-rechthoeken (Purple Boxes/Target Boxes) die in de toekomst liggen worden momenteel niet getekend. Dit komt doordat `timeScale.timeToCoordinate(time)` `null` retourneert voor tijdstippen in de toekomst waar nog geen kaarsen (candles) voor bestaan.
+- **Oplossing:**
+  1. **Visualisatie-afscheiding:** Geef geneste sub-golven een iets dunnere lijn (`lineWidth: 1.5` of `2` in plaats van `3`) en introduceer een subtiele, fractale stippellijn-visualisatie of kleurverzachting (bijvoorbeeld 80% opacity) om ze te onderscheiden van de hoofdtrend.
+  2. **Future Purple Boxes Extrapolatie:** Geef de kaarsen-lijst (`candles`) door aan `BoxPrimitive`. Wanneer `timeScale.timeToCoordinate(time)` `null` retourneert voor start- of eindtijdstippen in de toekomst, bereken de coördinaat dan via lineaire extrapolatie op basis van de breedte (barSpacing) van de laatste twee bekende kaarsen en de tijdstap.

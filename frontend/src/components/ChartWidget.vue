@@ -40,7 +40,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers, LineStyle } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts';
-import type { Candle, MotiveWave, CorrectiveWave, IncompleteWave, AnalysisScenario, WaveStructure } from '../composables/useMarketData';
+import type { Candle, MotiveWave, CorrectiveWave, IncompleteWave, AnalysisScenario, WaveStructure, Pivot } from '../composables/useMarketData';
 import { BoxPrimitive } from './BoxPrimitive';
 
 const props = defineProps<{
@@ -215,8 +215,19 @@ function getScenarioRenderConfig(ws: WaveStructure, scenarioBias: ScenarioStruct
   };
 }
 
+function collectAllPivots(ws: WaveStructure): Pivot[] {
+  let pivots = [...(ws.pivots || [])];
+  if (ws.sub_structures) {
+    ws.sub_structures.forEach(sub => {
+      pivots = pivots.concat(collectAllPivots(sub));
+    });
+  }
+  return pivots;
+}
+
 function getScenarioPriceOffsetStep(scenario: AnalysisScenario): number {
-  const prices = scenario.structures.flatMap(ws => (ws.pivots || []).map(p => p.price));
+  const allPivots = scenario.structures.flatMap(collectAllPivots);
+  const prices = allPivots.map(p => p.price);
   if (prices.length === 0) return 0.01;
 
   const min = Math.min(...prices);
@@ -401,7 +412,7 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
     priceOffsetStep: getScenarioPriceOffsetStep(scenario),
   };
 
-  scenario.structures.forEach((ws) => {
+  const drawStructure = (ws: WaveStructure) => {
     if (!ws.pivots || ws.pivots.length < 2) return;
 
     const renderConfig = getScenarioRenderConfig(ws, scenarioBias);
@@ -451,7 +462,14 @@ const renderScenarioStructures = (scenario: AnalysisScenario) => {
         candlestickSeries!.attachPrimitive(primitive);
       });
     }
-  });
+
+    // Recursively draw sub-structures
+    if (ws.sub_structures && ws.sub_structures.length > 0) {
+      ws.sub_structures.forEach(drawStructure);
+    }
+  };
+
+  scenario.structures.forEach(drawStructure);
 
   // Auto-fit candles to view
   chart?.timeScale().fitContent();

@@ -74,7 +74,16 @@ func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimef
 			if child, ok := findValidSubwave(mw.Start, mw.W1, mw.Direction, childMotives); ok {
 				mw.ConfidenceScore = math.Min(1.0, mw.ConfidenceScore+fractalValidationBoost)
 				subWavesMu.Lock()
-				subWavesMap[mw.Start.Time] = append(subWavesMap[mw.Start.Time], motiveToStructure(child))
+				exists := false
+				for _, existing := range subWavesMap[mw.Start.Time] {
+					if len(existing.Pivots) > 0 && existing.Pivots[0].Time == child.Start.Time && existing.Pivots[len(existing.Pivots)-1].Time == child.W5.Time {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					subWavesMap[mw.Start.Time] = append(subWavesMap[mw.Start.Time], motiveToStructure(child))
+				}
 				subWavesMu.Unlock()
 			} else {
 				mw.ConfidenceScore -= fractalValidationPenalty
@@ -90,7 +99,16 @@ func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimef
 			if child, ok := findValidSubwave(iw.Start, iw.W1, iw.Direction, childMotives); ok {
 				iw.ConfidenceScore = math.Min(1.0, iw.ConfidenceScore+fractalValidationBoost)
 				subWavesMu.Lock()
-				subWavesMap[iw.Start.Time] = append(subWavesMap[iw.Start.Time], motiveToStructure(child))
+				exists := false
+				for _, existing := range subWavesMap[iw.Start.Time] {
+					if len(existing.Pivots) > 0 && existing.Pivots[0].Time == child.Start.Time && existing.Pivots[len(existing.Pivots)-1].Time == child.W5.Time {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					subWavesMap[iw.Start.Time] = append(subWavesMap[iw.Start.Time], motiveToStructure(child))
+				}
 				subWavesMu.Unlock()
 			} else {
 				iw.ConfidenceScore -= fractalValidationPenalty
@@ -108,13 +126,25 @@ func ScenarioBundle(pivots []model.Pivot, childPivots []model.Pivot, parentTimef
 
 	var all []model.WaveStructure
 	for _, mw := range motives {
-		all = append(all, motiveToStructure(mw))
+		ws := motiveToStructure(mw)
+		if sub, ok := subWavesMap[mw.Start.Time]; ok {
+			ws.SubStructures = append(ws.SubStructures, sub...)
+		}
+		all = append(all, ws)
 	}
 	for _, cw := range correctives {
-		all = append(all, correctiveToStructure(cw))
+		ws := correctiveToStructure(cw)
+		if sub, ok := subWavesMap[cw.Start.Time]; ok {
+			ws.SubStructures = append(ws.SubStructures, sub...)
+		}
+		all = append(all, ws)
 	}
 	for _, iw := range incompletes {
-		all = append(all, incompleteToStructure(iw))
+		ws := incompleteToStructure(iw)
+		if sub, ok := subWavesMap[iw.Start.Time]; ok {
+			ws.SubStructures = append(ws.SubStructures, sub...)
+		}
+		all = append(all, ws)
 	}
 
 	bullishCandidates := make([]model.WaveStructure, 0, len(all))
@@ -376,14 +406,7 @@ func getChainConfidence(chain []model.WaveStructure) float64 {
 }
 
 func assembleScenarioStructures(chain []model.WaveStructure, subWavesMap map[int64][]model.WaveStructure) []model.WaveStructure {
-	var assembled []model.WaveStructure
-	for _, parent := range chain {
-		assembled = append(assembled, parent)
-		if sub, ok := subWavesMap[parent.Pivots[0].Time]; ok {
-			assembled = append(assembled, sub...)
-		}
-	}
-	return assembled
+	return chain
 }
 
 func findValidSubwave(macroStartPivot, macroW1Pivot *model.Pivot, macroDirection string, childMotives []model.MotiveWave) (model.MotiveWave, bool) {

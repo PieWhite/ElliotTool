@@ -9,11 +9,12 @@ type WaveStructure struct {
 	// Type identifies the pattern variant, e.g. "MOTIVE_IMPULSE", "MOTIVE_DIAGONAL",
 	// "CORRECTIVE_ZIGZAG", "CORRECTIVE_FLAT", "CORRECTIVE_TRIANGLE", "CORRECTIVE_WXY",
 	// "INCOMPLETE_123".
-	Type            string      `json:"type"`
-	Pivots          []Pivot     `json:"pivots"`
-	PurpleBoxes     []TargetBox `json:"purple_boxes,omitempty"`
-	ConfidenceScore float64     `json:"confidence_score"`
-	Degree          string      `json:"degree,omitempty"`
+	Type            string          `json:"type"`
+	Pivots          []Pivot         `json:"pivots"`
+	PurpleBoxes     []TargetBox     `json:"purple_boxes,omitempty"`
+	ConfidenceScore float64         `json:"confidence_score"`
+	Degree          string          `json:"degree,omitempty"`
+	SubStructures   []WaveStructure `json:"sub_structures,omitempty"`
 }
 
 // AnalysisScenario bundles a directional bias with one or more wave structures

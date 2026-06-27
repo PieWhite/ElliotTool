@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"WaveSight/pkg/model"
+	"WaveSight/pkg/swing"
 )
 
 type mockFetcher struct {
@@ -197,7 +198,7 @@ func TestHandler_HandleAnalyze(t *testing.T) {
 			fetcher := &mockFetcher{
 				fetchFn: tt.mockFetch,
 			}
-			handler := NewHandler(fetcher, repo)
+			handler := NewHandler(fetcher, repo, swing.NewVolatilitySwingDetector(14))
 
 			method := tt.method
 			if method == "" {
@@ -245,7 +246,7 @@ func BenchmarkAnalyzeHandler(b *testing.B) {
 		},
 	}
 	fetcher := &mockFetcher{}
-	handler := NewHandler(fetcher, repo)
+	handler := NewHandler(fetcher, repo, swing.NewVolatilitySwingDetector(14))
 
 	req := httptest.NewRequest("GET", "/api/analyze/AAPL?timeframe=1D&deviation=0.02", nil)
 

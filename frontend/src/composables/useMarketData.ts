@@ -70,6 +70,7 @@ export interface WaveStructure {
   purple_boxes?: TargetBox[];
   confidence_score: number;
   degree?: string;
+  sub_structures?: WaveStructure[];
 }
 
 // Step 10: A directional scenario (Primary or Alternate) containing all supporting structures.

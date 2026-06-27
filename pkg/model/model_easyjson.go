@@ -103,6 +103,33 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel(in *jlexer.Lexer, out *WaveStructur
 			} else {
 				out.Degree = string(in.String())
 			}
+		case "sub_structures":
+			if in.IsNull() {
+				in.Skip()
+				out.SubStructures = nil
+			} else {
+				in.Delim('[')
+				if out.SubStructures == nil {
+					if !in.IsDelim(']') {
+						out.SubStructures = make([]WaveStructure, 0, 0)
+					} else {
+						out.SubStructures = []WaveStructure{}
+					}
+				} else {
+					out.SubStructures = (out.SubStructures)[:0]
+				}
+				for !in.IsDelim(']') {
+					var v3 WaveStructure
+					if in.IsNull() {
+						in.Skip()
+					} else {
+						(v3).UnmarshalEasyJSON(in)
+					}
+					out.SubStructures = append(out.SubStructures, v3)
+					in.WantComma()
+				}
+				in.Delim(']')
+			}
 		default:
 			in.SkipRecursive()
 		}
@@ -129,11 +156,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel(out *jwriter.Writer, in WaveStructu
 			out.RawString("null")
 		} else {
 			out.RawByte('[')
-			for v3, v4 := range in.Pivots {
-				if v3 > 0 {
+			for v4, v5 := range in.Pivots {
+				if v4 > 0 {
 					out.RawByte(',')
 				}
-				(v4).MarshalEasyJSON(out)
+				(v5).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -143,11 +170,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel(out *jwriter.Writer, in WaveStructu
 		out.RawString(prefix)
 		{
 			out.RawByte('[')
-			for v5, v6 := range in.PurpleBoxes {
-				if v5 > 0 {
+			for v6, v7 := range in.PurpleBoxes {
+				if v6 > 0 {
 					out.RawByte(',')
 				}
-				(v6).MarshalEasyJSON(out)
+				(v7).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -161,6 +188,20 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel(out *jwriter.Writer, in WaveStructu
 		const prefix string = ",\"degree\":"
 		out.RawString(prefix)
 		out.String(string(in.Degree))
+	}
+	if len(in.SubStructures) != 0 {
+		const prefix string = ",\"sub_structures\":"
+		out.RawString(prefix)
+		{
+			out.RawByte('[')
+			for v8, v9 := range in.SubStructures {
+				if v8 > 0 {
+					out.RawByte(',')
+				}
+				(v9).MarshalEasyJSON(out)
+			}
+			out.RawByte(']')
+		}
 	}
 	out.RawByte('}')
 }
@@ -575,13 +616,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel4(in *jlexer.Lexer, out *MotiveWave)
 					out.PurpleBoxes = (out.PurpleBoxes)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v7 TargetBox
+					var v10 TargetBox
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v7).UnmarshalEasyJSON(in)
+						(v10).UnmarshalEasyJSON(in)
 					}
-					out.PurpleBoxes = append(out.PurpleBoxes, v7)
+					out.PurpleBoxes = append(out.PurpleBoxes, v10)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -687,11 +728,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel4(out *jwriter.Writer, in MotiveWave
 		out.RawString(prefix)
 		{
 			out.RawByte('[')
-			for v8, v9 := range in.PurpleBoxes {
-				if v8 > 0 {
+			for v11, v12 := range in.PurpleBoxes {
+				if v11 > 0 {
 					out.RawByte(',')
 				}
-				(v9).MarshalEasyJSON(out)
+				(v12).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -1075,13 +1116,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel6(in *jlexer.Lexer, out *CorrectiveW
 					out.PurpleBoxes = (out.PurpleBoxes)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v10 TargetBox
+					var v13 TargetBox
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v10).UnmarshalEasyJSON(in)
+						(v13).UnmarshalEasyJSON(in)
 					}
-					out.PurpleBoxes = append(out.PurpleBoxes, v10)
+					out.PurpleBoxes = append(out.PurpleBoxes, v13)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -1172,11 +1213,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel6(out *jwriter.Writer, in Corrective
 		out.RawString(prefix)
 		{
 			out.RawByte('[')
-			for v11, v12 := range in.PurpleBoxes {
-				if v11 > 0 {
+			for v14, v15 := range in.PurpleBoxes {
+				if v14 > 0 {
 					out.RawByte(',')
 				}
-				(v12).MarshalEasyJSON(out)
+				(v15).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -1374,13 +1415,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel8(in *jlexer.Lexer, out *AnalysisSce
 					out.Structures = (out.Structures)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v13 WaveStructure
+					var v16 WaveStructure
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v13).UnmarshalEasyJSON(in)
+						(v16).UnmarshalEasyJSON(in)
 					}
-					out.Structures = append(out.Structures, v13)
+					out.Structures = append(out.Structures, v16)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -1416,11 +1457,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel8(out *jwriter.Writer, in AnalysisSc
 			out.RawString("null")
 		} else {
 			out.RawByte('[')
-			for v14, v15 := range in.Structures {
-				if v14 > 0 {
+			for v17, v18 := range in.Structures {
+				if v17 > 0 {
 					out.RawByte(',')
 				}
-				(v15).MarshalEasyJSON(out)
+				(v18).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -1493,13 +1534,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel9(in *jlexer.Lexer, out *AnalysisRes
 					out.Candles = (out.Candles)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v16 Candle
+					var v19 Candle
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v16).UnmarshalEasyJSON(in)
+						(v19).UnmarshalEasyJSON(in)
 					}
-					out.Candles = append(out.Candles, v16)
+					out.Candles = append(out.Candles, v19)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -1534,13 +1575,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel9(in *jlexer.Lexer, out *AnalysisRes
 					out.MotiveWaves = (out.MotiveWaves)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v17 MotiveWave
+					var v20 MotiveWave
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v17).UnmarshalEasyJSON(in)
+						(v20).UnmarshalEasyJSON(in)
 					}
-					out.MotiveWaves = append(out.MotiveWaves, v17)
+					out.MotiveWaves = append(out.MotiveWaves, v20)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -1561,13 +1602,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel9(in *jlexer.Lexer, out *AnalysisRes
 					out.CorrectiveWaves = (out.CorrectiveWaves)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v18 CorrectiveWave
+					var v21 CorrectiveWave
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v18).UnmarshalEasyJSON(in)
+						(v21).UnmarshalEasyJSON(in)
 					}
-					out.CorrectiveWaves = append(out.CorrectiveWaves, v18)
+					out.CorrectiveWaves = append(out.CorrectiveWaves, v21)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -1588,13 +1629,13 @@ func easyjsonC80ae7adDecodeWaveSightPkgModel9(in *jlexer.Lexer, out *AnalysisRes
 					out.IncompleteWaves = (out.IncompleteWaves)[:0]
 				}
 				for !in.IsDelim(']') {
-					var v19 IncompleteWave
+					var v22 IncompleteWave
 					if in.IsNull() {
 						in.Skip()
 					} else {
-						(v19).UnmarshalEasyJSON(in)
+						(v22).UnmarshalEasyJSON(in)
 					}
-					out.IncompleteWaves = append(out.IncompleteWaves, v19)
+					out.IncompleteWaves = append(out.IncompleteWaves, v22)
 					in.WantComma()
 				}
 				in.Delim(']')
@@ -1630,11 +1671,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel9(out *jwriter.Writer, in AnalysisRe
 			out.RawString("null")
 		} else {
 			out.RawByte('[')
-			for v20, v21 := range in.Candles {
-				if v20 > 0 {
+			for v23, v24 := range in.Candles {
+				if v23 > 0 {
 					out.RawByte(',')
 				}
-				(v21).MarshalEasyJSON(out)
+				(v24).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -1649,11 +1690,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel9(out *jwriter.Writer, in AnalysisRe
 		out.RawString(prefix)
 		{
 			out.RawByte('[')
-			for v22, v23 := range in.MotiveWaves {
-				if v22 > 0 {
+			for v25, v26 := range in.MotiveWaves {
+				if v25 > 0 {
 					out.RawByte(',')
 				}
-				(v23).MarshalEasyJSON(out)
+				(v26).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -1663,11 +1704,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel9(out *jwriter.Writer, in AnalysisRe
 		out.RawString(prefix)
 		{
 			out.RawByte('[')
-			for v24, v25 := range in.CorrectiveWaves {
-				if v24 > 0 {
+			for v27, v28 := range in.CorrectiveWaves {
+				if v27 > 0 {
 					out.RawByte(',')
 				}
-				(v25).MarshalEasyJSON(out)
+				(v28).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}
@@ -1677,11 +1718,11 @@ func easyjsonC80ae7adEncodeWaveSightPkgModel9(out *jwriter.Writer, in AnalysisRe
 		out.RawString(prefix)
 		{
 			out.RawByte('[')
-			for v26, v27 := range in.IncompleteWaves {
-				if v26 > 0 {
+			for v29, v30 := range in.IncompleteWaves {
+				if v29 > 0 {
 					out.RawByte(',')
 				}
-				(v27).MarshalEasyJSON(out)
+				(v30).MarshalEasyJSON(out)
 			}
 			out.RawByte(']')
 		}

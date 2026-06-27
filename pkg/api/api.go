@@ -12,7 +12,7 @@ import (
 	"WaveSight/pkg/elliott"
 	"WaveSight/pkg/model"
 	"WaveSight/pkg/repository"
-	"WaveSight/pkg/zigzag"
+	"WaveSight/pkg/swing"
 )
 
 // CandleFetcher defines the interface for fetching market candles from an external API provider.
@@ -22,17 +22,19 @@ type CandleFetcher interface {
 
 // Handler coordinates request routing, cache lookups, external API fetches, and Elliott Wave scanners.
 type Handler struct {
-	fetcher CandleFetcher
-	repo    repository.CandleRepository
-	router  *http.ServeMux
+	fetcher  CandleFetcher
+	repo     repository.CandleRepository
+	detector swing.SwingDetector
+	router   *http.ServeMux
 }
 
 // NewHandler initializes a new API Handler with ServeMux routing.
-func NewHandler(fetcher CandleFetcher, repo repository.CandleRepository) *Handler {
+func NewHandler(fetcher CandleFetcher, repo repository.CandleRepository, detector swing.SwingDetector) *Handler {
 	h := &Handler{
-		fetcher: fetcher,
-		repo:    repo,
-		router:  http.NewServeMux(),
+		fetcher:  fetcher,
+		repo:     repo,
+		detector: detector,
+		router:   http.NewServeMux(),
 	}
 	h.registerRoutes()
 	return h
@@ -135,14 +137,12 @@ func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run calculations and scanning pipeline
-	pivots := zigzag.CalculateZigZag(candles, percentDeviation)
+	// Run calculations and scanning pipeline using volatility-adaptive swing detection
+	pivots := h.detector.DetectSwings(candles, percentDeviation)
 
 	var childPivots []model.Pivot
-	// In pkg/api/api.go -> De child percentDeviation corrigeren
 	if len(childCandles) > 0 {
-		// Schaal de deviatie wiskundig naar beneden voor de fijnere ruis op de uurgrafiek (bijv. delen door 3)
-		childPivots = zigzag.CalculateZigZag(childCandles, percentDeviation/3.0)
+		childPivots = h.detector.DetectSwings(childCandles, percentDeviation)
 	}
 
 	// ScenarioBundle ranks all patterns into a primary/alternate pair while also

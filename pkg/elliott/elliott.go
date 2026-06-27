@@ -224,10 +224,21 @@ func MatchIncompleteWaves(pivots []model.Pivot) []model.IncompleteWave {
 		return nil
 	}
 
+	completedStarts := make(map[int64]bool)
+	completedMotives := MatchMotiveWaves(pivots)
+	for _, m := range completedMotives {
+		if m.Start != nil {
+			completedStarts[m.Start.Time] = true
+		}
+	}
+
 	incompleteWaves := make([]model.IncompleteWave, 0, n/2)
 
 	for i := 0; i < n; i++ {
 		p0 := &pivots[i]
+		if completedStarts[p0.Time] {
+			continue
+		}
 		endWindow := i + maxLookaheadWindow
 		if endWindow > n {
 			endWindow = n

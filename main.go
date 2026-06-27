@@ -11,6 +11,7 @@ import (
 	"WaveSight/pkg/config"
 	"WaveSight/pkg/polygon"
 	"WaveSight/pkg/repository"
+	"WaveSight/pkg/swing"
 )
 
 func main() {
@@ -39,8 +40,9 @@ func main() {
 	// 4. Create Polygon client
 	polygonClient := polygon.NewClient(cfg.PolygonAPIKey, &http.Client{})
 
-	// 5. Initialize API Handler
-	handler := api.NewHandler(polygonClient, repo)
+	// 5. Initialize API Handler with volatility-adaptive swing detector (14-period ATR)
+	detector := swing.NewVolatilitySwingDetector(14)
+	handler := api.NewHandler(polygonClient, repo, detector)
 
 	// 6. Start HTTP Server
 	port := os.Getenv("PORT")

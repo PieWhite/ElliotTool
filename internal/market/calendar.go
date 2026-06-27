@@ -126,6 +126,20 @@ func (c *Calendar) nextTradingOpen(candidate time.Time, session Session) time.Ti
 	return atMinute(next, openMinutes, c.location)
 }
 
+func (c *Calendar) TradingDaysBefore(value time.Time, count int) time.Time {
+	if count <= 0 {
+		return value
+	}
+	current := value.In(c.location)
+	for count > 0 {
+		current = current.AddDate(0, 0, -1)
+		if isTradingDay(current) {
+			count--
+		}
+	}
+	return current
+}
+
 func atMinute(day time.Time, minute int, location *time.Location) time.Time {
 	return time.Date(
 		day.Year(), day.Month(), day.Day(), minute/60, minute%60, 0, 0, location,

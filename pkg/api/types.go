@@ -35,6 +35,11 @@ type SnapshotHistory struct {
 }
 
 //easyjson:json
+type SnapshotHistoryV3 struct {
+	Items []repository.SnapshotMetadataV3 `json:"items"`
+}
+
+//easyjson:json
 type Problem struct {
 	Type      string `json:"type"`
 	Title     string `json:"title"`

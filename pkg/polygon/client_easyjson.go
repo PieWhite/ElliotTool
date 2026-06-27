@@ -3,6 +3,7 @@
 package polygon
 
 import (
+	market "WaveSight/internal/market"
 	json "encoding/json"
 	easyjson "github.com/mailru/easyjson"
 	jlexer "github.com/mailru/easyjson/jlexer"
@@ -343,7 +344,115 @@ func (v *RateLimitError) UnmarshalJSON(data []byte) error {
 func (v *RateLimitError) UnmarshalEasyJSON(l *jlexer.Lexer) {
 	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon2(l, v)
 }
-func easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(in *jlexer.Lexer, out *Client) {
+func easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(in *jlexer.Lexer, out *FetchResult) {
+	isTopLevel := in.IsStart()
+	if in.IsNull() {
+		if isTopLevel {
+			in.Consumed()
+		}
+		in.Skip()
+		return
+	}
+	in.Delim('{')
+	for !in.IsDelim('}') {
+		key := in.UnsafeFieldName(false)
+		in.WantColon()
+		switch key {
+		case "Candles":
+			if in.IsNull() {
+				in.Skip()
+				out.Candles = nil
+			} else {
+				in.Delim('[')
+				if out.Candles == nil {
+					if !in.IsDelim(']') {
+						out.Candles = make([]market.Candle, 0, 1)
+					} else {
+						out.Candles = []market.Candle{}
+					}
+				} else {
+					out.Candles = (out.Candles)[:0]
+				}
+				for !in.IsDelim(']') {
+					var v4 market.Candle
+					if in.IsNull() {
+						in.Skip()
+					} else {
+						(v4).UnmarshalEasyJSON(in)
+					}
+					out.Candles = append(out.Candles, v4)
+					in.WantComma()
+				}
+				in.Delim(']')
+			}
+		case "PageRequests":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.PageRequests = int(in.Int())
+			}
+		default:
+			in.SkipRecursive()
+		}
+		in.WantComma()
+	}
+	in.Delim('}')
+	if isTopLevel {
+		in.Consumed()
+	}
+}
+func easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(out *jwriter.Writer, in FetchResult) {
+	out.RawByte('{')
+	first := true
+	_ = first
+	{
+		const prefix string = ",\"Candles\":"
+		out.RawString(prefix[1:])
+		if in.Candles == nil && (out.Flags&jwriter.NilSliceAsEmpty) == 0 {
+			out.RawString("null")
+		} else {
+			out.RawByte('[')
+			for v5, v6 := range in.Candles {
+				if v5 > 0 {
+					out.RawByte(',')
+				}
+				(v6).MarshalEasyJSON(out)
+			}
+			out.RawByte(']')
+		}
+	}
+	{
+		const prefix string = ",\"PageRequests\":"
+		out.RawString(prefix)
+		out.Int(int(in.PageRequests))
+	}
+	out.RawByte('}')
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v FetchResult) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(&w, v)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v FetchResult) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(w, v)
+}
+
+// UnmarshalJSON supports json.Unmarshaler interface
+func (v *FetchResult) UnmarshalJSON(data []byte) error {
+	r := jlexer.Lexer{Data: data}
+	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(&r, v)
+	return r.Error()
+}
+
+// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
+func (v *FetchResult) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(l, v)
+}
+func easyjsonC0e5e3f1DecodeWaveSightPkgPolygon4(in *jlexer.Lexer, out *Client) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -367,7 +476,7 @@ func easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(in *jlexer.Lexer, out *Client) {
 		in.Consumed()
 	}
 }
-func easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(out *jwriter.Writer, in Client) {
+func easyjsonC0e5e3f1EncodeWaveSightPkgPolygon4(out *jwriter.Writer, in Client) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -377,23 +486,23 @@ func easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(out *jwriter.Writer, in Client) 
 // MarshalJSON supports json.Marshaler interface
 func (v Client) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(&w, v)
+	easyjsonC0e5e3f1EncodeWaveSightPkgPolygon4(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
 func (v Client) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjsonC0e5e3f1EncodeWaveSightPkgPolygon3(w, v)
+	easyjsonC0e5e3f1EncodeWaveSightPkgPolygon4(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *Client) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(&r, v)
+	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon4(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *Client) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon3(l, v)
+	easyjsonC0e5e3f1DecodeWaveSightPkgPolygon4(l, v)
 }

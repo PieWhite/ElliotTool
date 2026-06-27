@@ -20,6 +20,55 @@ func NewEngine() *Engine {
 	}
 }
 
+// ParseAll returns every rule-valid structure discovered across the complete
+// observation interval. Scenario selection belongs to the master-tree layer;
+// it must not discard history merely because a node is not near the last bar.
+func (e *Engine) ParseAll(candles []market.Candle, timeframe market.Timeframe) ([]WaveNode, DataQuality) {
+	quality := assessDataQuality(candles, timeframe)
+	lattice := BuildPivotLattice(candles)
+	for _, branch := range lattice.Branches {
+		for _, level := range branch.Levels {
+			for _, pivot := range level {
+				if pivot.State == PivotAmbiguous {
+					quality.AmbiguousPivotCount++
+				}
+			}
+			break
+		}
+	}
+	nodes := e.parser.Parse(lattice)
+	result := make([]WaveNode, 0, len(nodes))
+	for _, node := range nodes {
+		node = applyMarketEvidence(node, candles)
+		if node.Conformance.HardRulesFailed == 0 && node.Conformance.Score > 0 {
+			result = append(result, node)
+		}
+	}
+	return result, quality
+}
+
+func (e *Engine) BuildTargets(
+	root WaveNode,
+	candles []market.Candle,
+	tickSize float64,
+	futureBars []int64,
+	invalidations []Invalidation,
+) []TargetZone {
+	return e.targets.Build(root, candles, tickSize, futureBars, invalidations)
+}
+
+func InvalidationsFor(node WaveNode) []Invalidation {
+	return buildInvalidations(node)
+}
+
+func BiasFor(node WaveNode) Direction {
+	return scenarioBias(node)
+}
+
+func PositionFor(node WaveNode) string {
+	return currentPosition(node)
+}
+
 func (e *Engine) Analyze(input AnalyzeInput) AnalysisResult {
 	if input.MaxScenarios < 1 || input.MaxScenarios > 5 {
 		input.MaxScenarios = 5

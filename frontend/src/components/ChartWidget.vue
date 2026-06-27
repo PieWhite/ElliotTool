@@ -1,6 +1,6 @@
 <template>
   <section class="chart-shell" aria-label="Elliott Wave price chart">
-    <div v-if="!snapshot" class="chart-empty">
+    <div v-if="!snapshot || !view" class="chart-empty">
       <div class="empty-orbit" aria-hidden="true"></div>
       <strong>Ready for a theory-conformant scan</strong>
       <span>The active count, invalidations and conditional Purple Boxes appear here.</span>
@@ -29,20 +29,23 @@ import type {
   HistogramData,
   IChartApi,
   ISeriesApi,
+  MouseEventParams,
   Time,
   UTCTimestamp,
   WhitespaceData,
 } from 'lightweight-charts'
 import { WaveOverlayPrimitive } from './WaveOverlayPrimitive'
-import type { AnalysisSnapshot, Scenario } from '../types/api'
+import type { AnalysisSnapshot, MasterScenario, TimeframeView } from '../types/api'
 
 const props = defineProps<{
   snapshot: AnalysisSnapshot | null
-  scenario: Scenario | null
-  comparison: Scenario | null
+  view: TimeframeView | null
+  scenario: MasterScenario | null
+  comparison: MasterScenario | null
   scale: 'ARITHMETIC' | 'LOG'
-  visibleDegrees: string[]
+  selectedNode: string
 }>()
+const emit = defineEmits<{ selectNode: [id: string] }>()
 
 const container = ref<HTMLDivElement | null>(null)
 let chart: IChartApi | null = null
@@ -50,6 +53,10 @@ let candleSeries: ISeriesApi<'Candlestick', Time> | null = null
 let volumeSeries: ISeriesApi<'Histogram', Time> | null = null
 let overlay: WaveOverlayPrimitive | null = null
 let resizeObserver: ResizeObserver | null = null
+const handleChartClick = (parameter: MouseEventParams<Time>): void => {
+  const objectID = parameter.hoveredInfo?.objectId ?? parameter.hoveredObjectId
+  if (typeof objectID === 'string') emit('selectNode', objectID)
+}
 
 function renderData(): void {
   if (!chart || !candleSeries || !volumeSeries) return
@@ -57,35 +64,40 @@ function renderData(): void {
   if (!snapshot) {
     candleSeries.setData([])
     volumeSeries.setData([])
-    overlay?.update({ scenario: null, comparison: null, futureBars: [], visibleDegrees: props.visibleDegrees })
+    overlay?.update({
+      graph: null, view: null, scenario: null, comparison: null, selectedNodeID: '',
+    })
     return
   }
+  const view = props.view
+  if (!view) return
 
   const candleData: Array<CandlestickData<UTCTimestamp> | WhitespaceData<UTCTimestamp>> =
-    snapshot.candles.map((candle) => ({
+    view.candles.map((candle) => ({
       time: candle.time as UTCTimestamp,
       open: candle.open,
       high: candle.high,
       low: candle.low,
       close: candle.close,
     }))
-  candleData.push(...snapshot.future_bars.map((time) => ({ time: time as UTCTimestamp })))
+  candleData.push(...view.future_logical_bars.map((time) => ({ time: time as UTCTimestamp })))
   candleSeries.setData(candleData)
 
-  const volumeData: HistogramData<UTCTimestamp>[] = snapshot.candles.map((candle) => ({
+  const volumeData: HistogramData<UTCTimestamp>[] = view.candles.map((candle) => ({
     time: candle.time as UTCTimestamp,
     value: candle.volume,
     color: candle.close >= candle.open ? 'rgba(74, 222, 177, 0.24)' : 'rgba(255, 102, 125, 0.22)',
   }))
   volumeSeries.setData(volumeData)
   overlay?.update({
+    graph: snapshot.master_wave_graph,
+    view,
     scenario: props.scenario,
     comparison: props.comparison,
-    futureBars: snapshot.future_bars,
-    visibleDegrees: props.visibleDegrees,
+    selectedNodeID: props.selectedNode,
   })
-  const from = Math.max(0, snapshot.candles.length - 180)
-  const to = snapshot.candles.length + Math.min(42, snapshot.future_bars.length)
+  const from = Math.max(0, view.candles.length - 240)
+  const to = view.candles.length + Math.min(42, view.future_logical_bars.length)
   chart.timeScale().setVisibleLogicalRange({ from, to })
 }
 
@@ -153,12 +165,14 @@ onMounted(() => {
     scaleMargins: { top: 0.82, bottom: 0 },
   })
   overlay = new WaveOverlayPrimitive({
+    graph: props.snapshot?.master_wave_graph ?? null,
+    view: props.view,
     scenario: props.scenario,
     comparison: props.comparison,
-    futureBars: props.snapshot?.future_bars ?? [],
-    visibleDegrees: props.visibleDegrees,
+    selectedNodeID: props.selectedNode,
   })
   candleSeries.attachPrimitive(overlay)
+  chart.subscribeClick(handleChartClick)
   resizeObserver = new ResizeObserver(() => {
     if (chart && container.value) {
       chart.resize(container.value.clientWidth, container.value.clientHeight)
@@ -170,7 +184,7 @@ onMounted(() => {
 })
 
 watch(
-  () => [props.snapshot, props.scenario, props.comparison, props.visibleDegrees] as const,
+  () => [props.snapshot, props.view, props.scenario, props.comparison, props.selectedNode] as const,
   renderData,
   { deep: false },
 )
@@ -178,6 +192,7 @@ watch(() => props.scale, applyScale)
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
+  chart?.unsubscribeClick(handleChartClick)
   if (candleSeries && overlay) candleSeries.detachPrimitive(overlay)
   chart?.remove()
   chart = null

@@ -102,3 +102,74 @@ func TestSQLiteStoreSnapshotsAreImmutableAndListed(t *testing.T) {
 		t.Fatalf("GetSnapshot(missing) error = %v", err)
 	}
 }
+
+func TestSQLiteStoreV3NativeCoverageAndImmutableRevisions(t *testing.T) {
+	t.Parallel()
+	store := testStore(t)
+	ctx := context.Background()
+	candles := []market.Candle{
+		{Time: 1_000, Open: 10, High: 12, Low: 9, Close: 11, Volume: 100},
+		{Time: 2_000, Open: 11, High: 13, Low: 10, Close: 12, Volume: 120},
+	}
+	changed, err := store.SaveNativeCandles(ctx, "AAPL", "MINUTE_NATIVE", candles)
+	if err != nil || changed {
+		t.Fatalf("first native save changed/error = %t/%v", changed, err)
+	}
+	candles[1].High = 14
+	changed, err = store.SaveNativeCandles(ctx, "AAPL", "MINUTE_NATIVE", candles[1:])
+	if err != nil || !changed {
+		t.Fatalf("provider correction changed/error = %t/%v", changed, err)
+	}
+	if err := store.SaveNativeCoverage(ctx, "AAPL", "MINUTE_NATIVE", 500, 1_500); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveNativeCoverage(ctx, "AAPL", "MINUTE_NATIVE", 1_501, 3_000); err != nil {
+		t.Fatal(err)
+	}
+	coverage, err := store.NativeCoverage(ctx, "AAPL", "MINUTE_NATIVE")
+	if err != nil || len(coverage) != 1 || coverage[0].From != 500 || coverage[0].To != 3_000 {
+		t.Fatalf("merged coverage = %+v, %v", coverage, err)
+	}
+
+	parent := SnapshotMetadataV3{
+		ID: "parent", RequestKey: "request-parent", DataFingerprint: "data-1",
+		Symbol: "AAPL", Session: "RTH", AsOf: 3_000, FocusTimeframe: "1D",
+		GeneratedAt: 4_000, TheoryVersion: "theory", EngineVersion: "3",
+	}
+	if err := store.SaveSnapshotV3(
+		ctx, parent, []byte(`{"id":"parent"}`),
+		map[market.Timeframe][]byte{market.Timeframe1D: []byte(`{"timeframe":"1D"}`)},
+		map[string][]byte{"event-1": []byte(`{"id":"event-1"}`)},
+		map[string][]byte{"wave-1": []byte(`{"id":"wave-1"}`)},
+		nil,
+		[]RankedPayload{{ID: "scenario-1", Rank: 1, Payload: []byte(`{"id":"scenario-1"}`)}},
+	); err != nil {
+		t.Fatal(err)
+	}
+	child := parent
+	child.ID = "child"
+	child.ParentSnapshotID = parent.ID
+	child.RequestKey = "request-child"
+	child.DataFingerprint = "data-2"
+	child.GeneratedAt++
+	if err := store.SaveSnapshotV3(
+		ctx, child, []byte(`{"id":"child"}`),
+		map[market.Timeframe][]byte{market.Timeframe1D: []byte(`{"timeframe":"1D","revision":true}`)},
+		nil, nil, nil, nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	parentPayload, _ := store.GetSnapshotV3(ctx, parent.ID)
+	childPayload, _ := store.GetSnapshotV3(ctx, child.ID)
+	if string(parentPayload) != `{"id":"parent"}` || string(childPayload) != `{"id":"child"}` {
+		t.Fatalf("revision mutated parent: %s / %s", parentPayload, childPayload)
+	}
+	view, err := store.GetViewV3(ctx, child.ID, market.Timeframe1D)
+	if err != nil || string(view) != `{"timeframe":"1D","revision":true}` {
+		t.Fatalf("child view = %s, %v", view, err)
+	}
+	items, err := store.ListSnapshotsV3(ctx, 20)
+	if err != nil || len(items) != 2 || items[0].ParentSnapshotID != parent.ID {
+		t.Fatalf("v3 history = %+v, %v", items, err)
+	}
+}

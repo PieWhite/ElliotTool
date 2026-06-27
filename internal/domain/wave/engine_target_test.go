@@ -206,6 +206,35 @@ func TestEngineReturnsCurrentOrExplicitlyIndeterminateScenarios(t *testing.T) {
 	}
 }
 
+func TestMasterEngineEntryPointsExposeAllValidStructures(t *testing.T) {
+	t.Parallel()
+	engine := NewEngine()
+	candles := testCandles(400)
+	nodes, quality := engine.ParseAll(candles, market.Timeframe1h)
+	if quality.CandleCount != len(candles) {
+		t.Fatalf("ParseAll quality count = %d", quality.CandleCount)
+	}
+	for _, node := range nodes {
+		if node.Conformance.HardRulesFailed != 0 {
+			t.Fatalf("ParseAll returned hard-invalid node %s", node.ID)
+		}
+	}
+	if len(nodes) == 0 {
+		return
+	}
+	root := nodes[0]
+	invalidations := InvalidationsFor(root)
+	_ = BiasFor(root)
+	if PositionFor(root) == "" {
+		t.Fatal("PositionFor returned an empty explanation")
+	}
+	future := make([]int64, 20)
+	for index := range future {
+		future[index] = candles[len(candles)-1].Time + int64(index+1)*3_600
+	}
+	_ = engine.BuildTargets(root, candles, 0.01, future, invalidations)
+}
+
 func TestScenarioInvalidationsBiasAndCurrentPosition(t *testing.T) {
 	t.Parallel()
 	points := bullishImpulse()

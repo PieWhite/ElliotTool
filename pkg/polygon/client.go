@@ -58,12 +58,22 @@ func (e *RateLimitError) Error() string {
 	return e.Message
 }
 
+type FetchResult struct {
+	Candles      []market.Candle
+	PageRequests int
+}
+
 func (c *Client) FetchCandles(ctx context.Context, ticker string, multiplier int, timespan, from, to string) ([]market.Candle, error) {
+	result, err := c.FetchCandlesDetailed(ctx, ticker, multiplier, timespan, from, to)
+	return result.Candles, err
+}
+
+func (c *Client) FetchCandlesDetailed(ctx context.Context, ticker string, multiplier int, timespan, from, to string) (FetchResult, error) {
 	if c.httpClient == nil {
-		return nil, fmt.Errorf("fetching Massive candles: nil HTTP client")
+		return FetchResult{}, fmt.Errorf("fetching Massive candles: nil HTTP client")
 	}
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("fetching Massive candles: empty API key")
+		return FetchResult{}, fmt.Errorf("fetching Massive candles: empty API key")
 	}
 
 	nextURL := fmt.Sprintf(
@@ -77,47 +87,49 @@ func (c *Client) FetchCandles(ctx context.Context, ticker string, multiplier int
 	)
 	candles := make([]market.Candle, 0, 8_192)
 	seenPages := make(map[string]struct{}, 8)
+	pageRequests := 0
 
 	for nextURL != "" {
 		if _, exists := seenPages[nextURL]; exists {
-			return nil, fmt.Errorf("fetching Massive candles: pagination loop detected")
+			return FetchResult{}, fmt.Errorf("fetching Massive candles: pagination loop detected")
 		}
 		seenPages[nextURL] = struct{}{}
 
 		requestURL, err := c.withAPIKey(nextURL)
 		if err != nil {
-			return nil, err
+			return FetchResult{}, err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("creating Massive request: %w", err)
+			return FetchResult{}, fmt.Errorf("creating Massive request: %w", err)
 		}
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("executing Massive request: %w", err)
+			return FetchResult{}, fmt.Errorf("executing Massive request: %w", err)
 		}
+		pageRequests++
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 		closeErr := resp.Body.Close()
 		if readErr != nil {
-			return nil, fmt.Errorf("reading Massive response: %w", readErr)
+			return FetchResult{}, fmt.Errorf("reading Massive response: %w", readErr)
 		}
 		if closeErr != nil {
-			return nil, fmt.Errorf("closing Massive response: %w", closeErr)
+			return FetchResult{}, fmt.Errorf("closing Massive response: %w", closeErr)
 		}
 
 		var page pageResponse
 		if err := page.UnmarshalJSON(body); err != nil {
-			return nil, fmt.Errorf("decoding Massive response: %w", err)
+			return FetchResult{}, fmt.Errorf("decoding Massive response: %w", err)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
-			return nil, &RateLimitError{Message: nonEmpty(page.Error, "Massive rate limit reached")}
+			return FetchResult{}, &RateLimitError{Message: nonEmpty(page.Error, "Massive rate limit reached")}
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Massive status %d: %s", resp.StatusCode, nonEmpty(page.Error, string(body)))
+			return FetchResult{}, fmt.Errorf("Massive status %d: %s", resp.StatusCode, nonEmpty(page.Error, string(body)))
 		}
 		if page.Status != "OK" && page.Status != "DELAYED" {
-			return nil, fmt.Errorf("Massive API status %q: %s", page.Status, page.Error)
+			return FetchResult{}, fmt.Errorf("Massive API status %q: %s", page.Status, page.Error)
 		}
 
 		for _, result := range page.Results {
@@ -128,7 +140,7 @@ func (c *Client) FetchCandles(ctx context.Context, ticker string, multiplier int
 		}
 		nextURL = page.NextURL
 	}
-	return candles, nil
+	return FetchResult{Candles: candles, PageRequests: pageRequests}, nil
 }
 
 func (c *Client) withAPIKey(rawURL string) (string, error) {

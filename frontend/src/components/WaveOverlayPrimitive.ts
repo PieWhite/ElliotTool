@@ -5,17 +5,27 @@ import type {
   IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
+  PrimitiveHoveredItem,
   SeriesAttachedParameter,
   Time,
   UTCTimestamp,
 } from 'lightweight-charts'
-import type { Invalidation, Pivot, Scenario, TargetZone, WaveNode } from '../types/api'
+import type {
+  CanonicalWaveEvent,
+  Invalidation,
+  MasterScenario,
+  MasterWaveGraph,
+  MasterWaveNode,
+  TargetZone,
+  TimeframeView,
+} from '../types/api'
 
-interface OverlayModel {
-  scenario: Scenario | null
-  comparison: Scenario | null
-  futureBars: number[]
-  visibleDegrees: string[]
+export interface OverlayModel {
+  graph: MasterWaveGraph | null
+  view: TimeframeView | null
+  scenario: MasterScenario | null
+  comparison: MasterScenario | null
+  selectedNodeID: string
 }
 
 interface DrawPoint {
@@ -31,29 +41,6 @@ interface LabelPoint extends DrawPoint {
 
 const PURPLE = '#b874ff'
 const COMPARISON = '#7183ad'
-
-function pivotLabels(node: WaveNode): string[] {
-  if (node.pattern.includes('TRIANGLE')) return ['A', 'B', 'C', 'D', 'E']
-  if (node.pattern.includes('ZIGZAG') || node.pattern.includes('FLAT')) return ['A', 'B', 'C']
-  if (node.pattern.includes('THREE')) return ['W', 'X', 'Y', 'X', 'Z']
-  return ['1', '2', '3', '4', '5']
-}
-
-function degreeLabel(label: string, degree: string): string {
-  const roman = label.replace('1', 'i').replace('2', 'ii').replace('3', 'iii').replace('4', 'iv').replace('5', 'v')
-  switch (degree) {
-    case 'GRAND_SUPERCYCLE': return `[[${label}]]`
-    case 'SUPERCYCLE': return `[${label}]`
-    case 'CYCLE': return label
-    case 'PRIMARY': return `[${label}]`
-    case 'INTERMEDIATE': return `(${label})`
-    case 'MINOR': return label
-    case 'MINUTE': return roman
-    case 'MINUETTE': return `(${roman})`
-    case 'SUBMINUETTE': return roman
-    default: return label
-  }
-}
 
 class OverlayRenderer implements IPrimitivePaneRenderer {
   private readonly source: WaveOverlayPrimitive
@@ -123,10 +110,11 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
   }
 
   autoscaleInfo(): AutoscaleInfo | null {
-    const values: number[] = []
-    const collectScenario = (scenario: Scenario | null) => {
-      if (!scenario) return
-      collectNodePrices(scenario.root, values)
+    const graph = this.model.graph
+    if (!graph) return null
+    const values = graph.events.map((event) => event.orthodox_price)
+    for (const scenario of [this.model.scenario, this.model.comparison]) {
+      if (!scenario) continue
       for (const invalidation of scenario.invalidations) {
         if (invalidation.price !== undefined) values.push(invalidation.price)
       }
@@ -134,8 +122,6 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
         if (target.status !== 'INVALIDATED') values.push(target.min_price, target.max_price)
       }
     }
-    collectScenario(this.model.scenario)
-    collectScenario(this.model.comparison)
     if (values.length === 0) return null
     return {
       priceRange: { minValue: Math.min(...values), maxValue: Math.max(...values) },
@@ -143,143 +129,173 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
     }
   }
 
+  hitTest(x: number, y: number): PrimitiveHoveredItem | null {
+    const graph = this.model.graph
+    const view = this.model.view
+    const scenario = this.model.scenario
+    if (!graph || !view || !scenario || !this.series) return null
+    const nodeByID = new Map(graph.nodes.map((node) => [node.id, node]))
+    const eventByID = new Map(graph.events.map((event) => [event.id, event]))
+    const allowed = scenarioNodeIDs(scenario, nodeByID)
+    const ids = [...new Set([...view.visible_node_ids, ...view.ancestor_node_ids])]
+    let best: { id: string; distance: number } | null = null
+    for (const id of ids) {
+      if (!allowed.has(id)) continue
+      const node = nodeByID.get(id)
+      if (!node) continue
+      const points = node.pivot_event_ids
+        .map((eventID) => eventByID.get(eventID))
+        .map((event) => event ? this.coordinate(event) : null)
+        .filter((point): point is DrawPoint => point !== null)
+      for (let index = 1; index < points.length; index++) {
+        const distance = distanceToSegment({ x, y }, points[index - 1], points[index])
+        if (distance <= 8 && (!best || distance < best.distance)) best = { id, distance }
+      }
+    }
+    return best ? {
+      externalId: best.id,
+      distance: best.distance,
+      hitTestPriority: 1,
+      cursorStyle: 'pointer',
+      zOrder: 'top',
+      itemType: 'primitive',
+    } : null
+  }
+
   draw(context: CanvasRenderingContext2D, width: number, height: number): void {
-    if (!this.chart || !this.series) return
+    if (!this.chart || !this.series || !this.model.graph || !this.model.view) return
     context.save()
-    this.drawScenario(context, this.model.comparison, COMPARISON, 0.32, width, height, true)
+    this.drawScenario(context, this.model.comparison, COMPARISON, 0.3, width, height, true)
     this.drawScenario(context, this.model.scenario, PURPLE, 1, width, height, false)
     context.restore()
   }
 
   private drawScenario(
     context: CanvasRenderingContext2D,
-    scenario: Scenario | null,
+    scenario: MasterScenario | null,
     color: string,
     opacity: number,
     width: number,
     height: number,
     comparison: boolean,
   ): void {
-    if (!scenario) return
+    const graph = this.model.graph
+    const view = this.model.view
+    if (!scenario || !graph || !view) return
+    const nodeByID = new Map(graph.nodes.map((node) => [node.id, node]))
+    const eventByID = new Map(graph.events.map((event) => [event.id, event]))
+    const allowed = scenarioNodeIDs(scenario, nodeByID)
+    const ancestorSet = new Set(view.ancestor_node_ids)
+    const renderIDs = [...new Set([...view.visible_node_ids, ...view.ancestor_node_ids])]
+      .filter((id) => allowed.has(id))
+      .sort((left, right) => {
+        const leftNode = nodeByID.get(left)
+        const rightNode = nodeByID.get(right)
+        return (rightNode?.pivot_event_ids.length ?? 0) - (leftNode?.pivot_event_ids.length ?? 0)
+      })
     const labels: LabelPoint[] = []
-    this.drawNode(context, scenario.root, color, opacity, 0, labels)
+    for (const id of renderIDs) {
+      const node = nodeByID.get(id)
+      if (!node) continue
+      this.drawNode(
+        context,
+        node,
+        eventByID,
+        color,
+        opacity,
+        ancestorSet.has(id),
+        id === this.model.selectedNodeID,
+        labels,
+      )
+    }
     if (!comparison) {
-      this.drawTargets(context, scenario.target_ladder, scenario.root.orthodox_end.time, opacity, width)
-      this.drawInvalidations(context, scenario.invalidations, scenario.root.orthodox_end.time, opacity, width)
+      const anchor = activeAnchor(scenario, nodeByID, eventByID)
+      this.drawTargets(context, scenario.target_ladder, anchor, opacity, width)
+      this.drawInvalidations(context, scenario.invalidations, anchor, opacity, width)
     }
     this.drawLabels(context, labels, height)
   }
 
   private drawNode(
     context: CanvasRenderingContext2D,
-    node: WaveNode,
+    node: MasterWaveNode,
+    events: Map<string, CanonicalWaveEvent>,
     color: string,
     opacity: number,
-    depth: number,
+    ancestor: boolean,
+    selected: boolean,
     labels: LabelPoint[],
   ): void {
-    const visible = this.model.visibleDegrees.length === 0 ||
-      this.model.visibleDegrees.includes(node.degree)
-    const coordinates = node.pivots
-      .map((pivot) => ({ pivot, point: this.coordinate(pivot) }))
-      .filter((entry): entry is { pivot: Pivot; point: DrawPoint } => entry.point !== null)
-    if (visible && coordinates.length >= 2) {
-      context.beginPath()
-      context.strokeStyle = colorWithOpacity(color, opacity * Math.max(0.3, 1 - depth * 0.18))
-      context.lineWidth = Math.max(1, 3 - depth * 0.55)
-      context.setLineDash(node.status === 'DEVELOPING' ? [7, 4] : [])
-      context.moveTo(coordinates[0].point.x, coordinates[0].point.y)
-      for (const entry of coordinates.slice(1)) {
-        context.lineTo(entry.point.x, entry.point.y)
-      }
-      context.stroke()
-      context.setLineDash([])
-
-      const names = pivotLabels(node)
-      coordinates.slice(1).forEach((entry, index) => {
-        if (index >= names.length) return
-        labels.push({
-          ...entry.point,
-          text: degreeLabel(names[index], node.degree),
-          color,
-          opacity: opacity * Math.max(0.4, 1 - depth * 0.18),
-        })
+    const coordinates = node.pivot_event_ids
+      .map((id) => {
+        const event = events.get(id)
+        return event ? { event, point: this.coordinate(event) } : null
       })
-    }
-    for (const child of node.children ?? []) {
-      this.drawNode(context, child, color, opacity, depth + 1, labels)
-    }
+      .filter((entry): entry is { event: CanonicalWaveEvent; point: DrawPoint } =>
+        entry !== null && entry.point !== null)
+    if (coordinates.length < 2) return
+    const lineOpacity = opacity * (ancestor ? 0.48 : 0.9)
+    context.beginPath()
+    context.strokeStyle = colorWithOpacity(color, selected ? opacity : lineOpacity)
+    context.lineWidth = selected ? 3.5 : ancestor ? 2.5 : 1.35
+    context.setLineDash(node.status === 'DEVELOPING' ? [7, 4] : [])
+    context.moveTo(coordinates[0].point.x, coordinates[0].point.y)
+    for (const entry of coordinates.slice(1)) context.lineTo(entry.point.x, entry.point.y)
+    context.stroke()
+    context.setLineDash([])
+
+    const names = pivotLabels(node)
+    coordinates.slice(1).forEach((entry, index) => {
+      if (index >= names.length || (ancestor && !selected && index < coordinates.length - 2)) return
+      labels.push({
+        ...entry.point,
+        text: degreeLabel(names[index], node.degree),
+        color,
+        opacity: selected ? opacity : lineOpacity,
+      })
+    })
   }
 
   private drawTargets(
     context: CanvasRenderingContext2D,
     targets: TargetZone[],
-    anchorTime: number,
+    anchor: CanonicalWaveEvent | null,
     opacity: number,
     width: number,
   ): void {
-    const anchorX = this.timeCoordinate(anchorTime) ?? Math.max(0, width - 260)
+    const view = this.model.view
+    if (!view) return
+    const anchorX = anchor ? (this.timeCoordinate(this.chartTime(anchor)) ?? Math.max(0, width - 260)) : Math.max(0, width - 260)
     for (const target of targets) {
       if (target.status === 'INVALIDATED') continue
-      if (target.geometry === 'CHANNEL_POLYGON' && (target.points?.length ?? 0) >= 3) {
-        const polygon = target.points
-          ?.map((point) => {
-            const time = point.bar_offset <= 0
-              ? anchorTime
-              : this.model.futureBars[point.bar_offset - 1]
-            const x = time === undefined ? null : this.timeCoordinate(time)
-            const y = this.series?.priceToCoordinate(point.price)
-            return x === null || y === null || y === undefined ? null : { x, y: Number(y) }
-          })
-          .filter((point): point is DrawPoint => point !== null) ?? []
-        if (polygon.length >= 3) {
-          context.beginPath()
-          context.moveTo(polygon[0].x, polygon[0].y)
-          for (const point of polygon.slice(1)) context.lineTo(point.x, point.y)
-          context.closePath()
-          context.fillStyle = `rgba(158, 72, 255, ${0.07 * opacity})`
-          context.strokeStyle = `rgba(190, 118, 255, ${0.52 * opacity})`
-          context.setLineDash([7, 5])
-          context.fill()
-          context.stroke()
-          context.setLineDash([])
-          context.fillStyle = `rgba(227, 204, 255, ${0.82 * opacity})`
-          context.font = '600 10px Inter, system-ui, sans-serif'
-          context.fillText(target.wave_label, polygon[0].x + 6, polygon[0].y - 5)
-        }
-        continue
-      }
       const y1 = this.series?.priceToCoordinate(target.min_price)
       const y2 = this.series?.priceToCoordinate(target.max_price)
       if (y1 === null || y1 === undefined || y2 === null || y2 === undefined) continue
       const endTime = target.time_window?.end_time ??
-        this.model.futureBars[Math.min(49, this.model.futureBars.length - 1)]
+        view.future_logical_bars[Math.min(49, view.future_logical_bars.length - 1)]
       const endX = endTime ? (this.timeCoordinate(endTime) ?? width) : width
-      const lineOnly = target.confluence === 'SINGLE_LEVEL' || Math.abs(target.max_price - target.min_price) < 1e-9
+      const lineOnly = target.confluence === 'SINGLE_LEVEL' ||
+        Math.abs(target.max_price - target.min_price) < 1e-9
       context.beginPath()
+      context.strokeStyle = `rgba(190, 118, 255, ${0.82 * opacity})`
+      context.setLineDash(target.status === 'CONDITIONAL' ? [6, 4] : [])
       if (lineOnly) {
-        context.strokeStyle = `rgba(190, 118, 255, ${0.78 * opacity})`
-        context.lineWidth = 1
-        context.setLineDash([4, 4])
         context.moveTo(anchorX, Number(y1))
         context.lineTo(endX, Number(y1))
         context.stroke()
       } else {
         const top = Math.min(Number(y1), Number(y2))
-        const boxHeight = Math.max(2, Math.abs(Number(y1) - Number(y2)))
         context.fillStyle = target.confluence === 'HIGH'
           ? `rgba(158, 72, 255, ${0.22 * opacity})`
           : `rgba(158, 72, 255, ${0.13 * opacity})`
-        context.strokeStyle = `rgba(190, 118, 255, ${0.82 * opacity})`
         context.lineWidth = target.confluence === 'HIGH' ? 2 : 1
-        context.setLineDash(target.status === 'CONDITIONAL' ? [6, 4] : [])
-        context.rect(anchorX, top, Math.max(2, endX - anchorX), boxHeight)
+        context.rect(anchorX, top, Math.max(2, endX - anchorX), Math.max(2, Math.abs(Number(y1) - Number(y2))))
         context.fill()
         context.stroke()
       }
       context.setLineDash([])
       context.fillStyle = `rgba(227, 204, 255, ${0.9 * opacity})`
-      context.font = '600 11px Inter, system-ui, sans-serif'
+      context.font = '600 10px Inter, system-ui, sans-serif'
       context.fillText(`${target.wave_label} · ${target.confluence}`, anchorX + 6, Math.min(Number(y1), Number(y2)) - 5)
     }
   }
@@ -287,11 +303,11 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
   private drawInvalidations(
     context: CanvasRenderingContext2D,
     invalidations: Invalidation[],
-    anchorTime: number,
+    anchor: CanonicalWaveEvent | null,
     opacity: number,
     width: number,
   ): void {
-    const startX = this.timeCoordinate(anchorTime) ?? 0
+    const startX = anchor ? (this.timeCoordinate(this.chartTime(anchor)) ?? 0) : 0
     for (const invalidation of invalidations) {
       if (invalidation.price === undefined) continue
       const y = this.series?.priceToCoordinate(invalidation.price)
@@ -305,7 +321,7 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
       context.stroke()
       context.setLineDash([])
       context.fillStyle = `rgba(255, 151, 166, ${0.9 * opacity})`
-      context.font = '500 10px Inter, system-ui, sans-serif'
+      context.font = '500 9px Inter, system-ui, sans-serif'
       context.fillText('INVALIDATION', startX + 6, Number(y) - 4)
     }
   }
@@ -335,11 +351,27 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
     context.textAlign = 'start'
   }
 
-  private coordinate(pivot: Pivot): DrawPoint | null {
-    const x = this.timeCoordinate(pivot.time)
-    const y = this.series?.priceToCoordinate(pivot.price)
+  private coordinate(event: CanonicalWaveEvent): DrawPoint | null {
+    const x = this.timeCoordinate(this.chartTime(event))
+    const y = this.series?.priceToCoordinate(event.orthodox_price)
     if (x === null || y === null || y === undefined) return null
     return { x, y: Number(y) }
+  }
+
+  private chartTime(event: CanonicalWaveEvent): number {
+    const candles = this.model.view?.candles ?? []
+    let low = 0
+    let high = candles.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (candles[middle].source_to < event.orthodox_time) low = middle + 1
+      else high = middle
+    }
+    const candle = candles[low]
+    if (candle && candle.source_from <= event.orthodox_time && candle.source_to >= event.orthodox_time) {
+      return candle.time
+    }
+    return event.orthodox_time
   }
 
   private timeCoordinate(time: number): number | null {
@@ -348,16 +380,63 @@ export class WaveOverlayPrimitive implements ISeriesPrimitive<Time> {
   }
 }
 
-function collectNodePrices(node: WaveNode, values: number[]): void {
-  values.push(...node.pivots.map((pivot) => pivot.price))
-  for (const child of node.children ?? []) collectNodePrices(child, values)
+function scenarioNodeIDs(
+  scenario: MasterScenario,
+  nodes: Map<string, MasterWaveNode>,
+): Set<string> {
+  const result = new Set<string>()
+  const include = (id: string): void => {
+    if (result.has(id)) return
+    const node = nodes.get(id)
+    if (!node) return
+    result.add(id)
+    node.child_ids.forEach(include)
+  }
+  scenario.observation_root.context_sequence.forEach(include)
+  scenario.active_path.forEach(include)
+  return result
+}
+
+function activeAnchor(
+  scenario: MasterScenario,
+  nodes: Map<string, MasterWaveNode>,
+  events: Map<string, CanonicalWaveEvent>,
+): CanonicalWaveEvent | null {
+  const activeID = scenario.active_path.at(-1)
+  const node = activeID ? nodes.get(activeID) : undefined
+  return node ? events.get(node.end_event_id) ?? null : null
+}
+
+function pivotLabels(node: MasterWaveNode): string[] {
+  if (node.pattern.includes('TRIANGLE')) return ['A', 'B', 'C', 'D', 'E']
+  if (node.pattern.includes('ZIGZAG') || node.pattern.includes('FLAT')) return ['A', 'B', 'C']
+  if (node.pattern.includes('THREE')) return ['W', 'X', 'Y', 'X', 'Z']
+  return ['1', '2', '3', '4', '5']
+}
+
+function degreeLabel(label: string, degree: string): string {
+  const roman = label.replace('1', 'i').replace('2', 'ii').replace('3', 'iii').replace('4', 'iv').replace('5', 'v')
+  switch (degree) {
+    case 'GRAND_SUPERCYCLE': return `[[${label}]]`
+    case 'SUPERCYCLE':
+    case 'PRIMARY': return `[${label}]`
+    case 'INTERMEDIATE': return `(${label})`
+    case 'MINUTE': return roman
+    case 'MINUETTE': return `(${roman})`
+    case 'SUBMINUETTE': return roman
+    default: return label
+  }
 }
 
 function colorWithOpacity(hex: string, opacity: number): string {
-  const normalized = hex.replace('#', '')
-  const value = Number.parseInt(normalized, 16)
-  const red = (value >> 16) & 255
-  const green = (value >> 8) & 255
-  const blue = value & 255
-  return `rgba(${red}, ${green}, ${blue}, ${Math.max(0, Math.min(1, opacity))})`
+  const value = Number.parseInt(hex.replace('#', ''), 16)
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${Math.max(0, Math.min(1, opacity))})`
+}
+
+function distanceToSegment(point: DrawPoint, start: DrawPoint, end: DrawPoint): number {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y)
+  const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)))
+  return Math.hypot(point.x - (start.x + ratio * dx), point.y - (start.y + ratio * dy))
 }

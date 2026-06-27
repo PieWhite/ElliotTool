@@ -56,17 +56,17 @@ func TestFetchCandlesFollowsPagination(t *testing.T) {
 	}})
 	client.SetBaseURL("https://api.massive.test")
 
-	candles, err := client.FetchCandles(
+	result, err := client.FetchCandlesDetailed(
 		context.Background(), "AAPL", 5, "minute", "2026-06-01", "2026-06-02",
 	)
 	if err != nil {
 		t.Fatalf("FetchCandles() error = %v", err)
 	}
-	if requests != 2 || len(candles) != 2 {
-		t.Fatalf("got %d requests and %d candles, want 2 and 2", requests, len(candles))
+	if requests != 2 || result.PageRequests != 2 || len(result.Candles) != 2 {
+		t.Fatalf("got %d requests, %d telemetry pages and %d candles", requests, result.PageRequests, len(result.Candles))
 	}
-	if candles[0].Time != 1780272000 || candles[1].Close != 102 {
-		t.Fatalf("unexpected normalized candles: %+v", candles)
+	if result.Candles[0].Time != 1780272000 || result.Candles[1].Close != 102 {
+		t.Fatalf("unexpected normalized candles: %+v", result.Candles)
 	}
 }
 

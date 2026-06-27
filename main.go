@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"WaveSight/internal/domain/wave"
+	"WaveSight/internal/domain/master"
 	"WaveSight/internal/market"
 	"WaveSight/pkg/api"
 	"WaveSight/pkg/config"
@@ -61,7 +61,6 @@ func run() error {
 	handler := api.NewHandler(
 		provider,
 		store,
-		wave.NewEngine(),
 		calendar,
 		api.HandlerConfig{
 			AllowedOrigins: cfg.AllowedOrigins, MaxConcurrentScans: cfg.MaxConcurrentScans,
@@ -79,7 +78,7 @@ func run() error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("WaveSight %s listening on http://localhost:%s", wave.EngineVersion, cfg.Port)
+		log.Printf("WaveSight %s listening on http://localhost:%s", master.EngineVersion, cfg.Port)
 		errCh <- server.ListenAndServe()
 	}()
 

@@ -1,4 +1,4 @@
-import type { Conformance, Scenario, TargetZone } from '../types/api'
+import type { Conformance, MasterScenario, TargetZone } from '../types/api'
 
 export interface ConformanceDatum {
   label: string
@@ -6,7 +6,7 @@ export interface ConformanceDatum {
   failed: number
 }
 
-export function scenarioDisplayName(scenario: Scenario): string {
+export function scenarioDisplayName(scenario: MasterScenario): string {
   return scenario.status === 'PREFERRED'
     ? 'Preferred'
     : scenario.status === 'INDETERMINATE'
@@ -23,7 +23,7 @@ export function conformanceVector(value: Conformance): ConformanceDatum[] {
   ]
 }
 
-export function visibleTargetZones(scenario: Scenario | null): TargetZone[] {
+export function visibleTargetZones(scenario: MasterScenario | null): TargetZone[] {
   if (!scenario) return []
   return scenario.target_ladder.filter((target) => target.status !== 'INVALIDATED')
 }

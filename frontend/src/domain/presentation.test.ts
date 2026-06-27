@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { conformanceVector, scenarioDisplayName, visibleTargetZones } from './presentation'
-import type { Scenario, TargetZone } from '../types/api'
+import type { MasterScenario, TargetZone } from '../types/api'
 
 const target = (id: string, status: TargetZone['status']): TargetZone => ({
   id,
@@ -15,7 +15,7 @@ const target = (id: string, status: TargetZone['status']): TargetZone => ({
   invalidation_ids: [],
 })
 
-const scenario: Scenario = {
+const scenario: MasterScenario = {
   id: 'scenario-1',
   rank: 1,
   status: 'PREFERRED',
@@ -31,33 +31,21 @@ const scenario: Scenario = {
     structural_coverage: 1,
     score: 0.92,
   },
-  invalidations: [],
-  root: {
-    id: 'root',
-    pattern: 'IMPULSE',
-    mode: 'MOTIVE',
-    function: 'ACTIONARY',
-    direction: 'BULLISH',
-    degree: 'PRIMARY',
-    status: 'COMPLETED',
-    label: 'Impulse',
-    level: 1,
-    orthodox_start: { time: 1, bar_index: 0, price: 100, kind: 'LOW', state: 'CONFIRMED', prominence: 1 },
-    orthodox_end: { time: 2, bar_index: 1, price: 120, kind: 'HIGH', state: 'CONFIRMED', prominence: 1 },
-    pivots: [],
-    rule_evaluations: [],
-    conformance: {
-      hard_rules_passed: 8,
-      hard_rules_failed: 0,
-      guidelines_passed: 5,
-      guidelines_failed: 2,
-      not_observable: 1,
-      ratio_confluences: 3,
-      structural_coverage: 1,
-      score: 0.92,
-    },
+  observation_root: {
+    from: 1,
+    to: 2,
+    open_left_boundary: true,
+    context_sequence: [],
+    intervals: [],
   },
+  active_path: [],
+  invalidations: [],
   target_ladder: [target('active', 'ACTIVE'), target('invalid', 'INVALIDATED')],
+  audit: {
+    global_thesis: 'Primary [3]',
+    cross_timeframe_evidence: [],
+  },
+  material_signature: 'signature',
 }
 
 describe('scenario presentation', () => {

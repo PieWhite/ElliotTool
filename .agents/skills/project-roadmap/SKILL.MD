@@ -30,9 +30,14 @@ Existing code and historical tests never override those documents.
 | Orthodox endpoints | `WaveNode` audit | stored endpoints drive every measurement |
 | Guidelines and priors | `guidelines.go` | ranking evidence only; never structural rejection |
 | Price and time targets | `targets.go` | exact levels retained; boxes need independent families |
-| Scenario selection | `engine.go` | current region, deterministic top five, explicit indeterminate |
-| Immutable snapshots | repository and v2 API | request hash, candle fingerprint and versioned ID |
-| Chart rendering | `WaveOverlayPrimitive.ts` | one canvas overlay, logical future bars, no timestamp mutation |
+| Master scenario selection | `internal/domain/master/engine.go` | full observation narrative, material alternatives only, explicit gaps |
+| Cross-scale event identity | `CanonicalWaveEvent` | one orthodox event ID reused by every relevant view |
+| Canonical data | `market/aggregate.go` | native daily + native minute; session-anchored local projections |
+| Relative degree | master graph | inferred from nesting/span across the dataset, never fixed to timeframe |
+| View projection | `TimeframeView` | ancestor retention, three-bar child threshold, no parser/provider call |
+| Immutable snapshots | repository and v3 API | native fingerprint, master request, revision parent and versioned ID |
+| Historical refinement | v3 revision jobs | fetch only missing minute interval; never mutate the parent |
+| Chart rendering | `WaveOverlayPrimitive.ts` | one canvas overlay, canonical events, logical future bars, no timestamp mutation |
 
 ## Release gates
 
@@ -44,5 +49,11 @@ Existing code and historical tests never override those documents.
   build pass.
 - No legacy v1 arrays or adapters are exposed.
 - No scenario with a hard-rule failure can leave the engine.
+- A cold master scan contains exactly two logical provider datasets.
+- Timeframe changes preserve scenario IDs, ranking, active path and event IDs.
+- Weekly nodes remain ancestors of their visible hourly and minute children.
+- Missing lower-degree coverage is `NOT_OBSERVABLE`; it is never synthesized.
+- Leaf-only differences cannot create a separate scenario card.
+- Refinements produce an immutable child snapshot and reproducible share URL.
 - Unobservable breadth, news or sentiment stays `NOT_OBSERVABLE`.
 - A target without independent confluence renders as a line, never as a box.

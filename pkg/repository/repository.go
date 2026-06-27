@@ -12,6 +12,7 @@ import (
 )
 
 var ErrSnapshotNotFound = errors.New("analysis snapshot not found")
+var ErrJobNotFound = errors.New("analysis job not found")
 
 type Store interface {
 	Migrate(ctx context.Context) error
@@ -22,6 +23,61 @@ type Store interface {
 	SaveSnapshot(ctx context.Context, metadata SnapshotMetadata, payload []byte) error
 	GetSnapshot(ctx context.Context, id string) ([]byte, error)
 	ListSnapshots(ctx context.Context, limit int) ([]SnapshotMetadata, error)
+}
+
+type V3Store interface {
+	SaveNativeCandles(ctx context.Context, ticker, resolution string, candles []market.Candle) (bool, error)
+	GetNativeCandles(ctx context.Context, ticker, resolution string, from, to int64) ([]market.Candle, error)
+	NativeCoverage(ctx context.Context, ticker, resolution string) ([]CoverageRange, error)
+	SaveNativeCoverage(ctx context.Context, ticker, resolution string, from, to int64) error
+	SaveSnapshotV3(
+		ctx context.Context,
+		metadata SnapshotMetadataV3,
+		payload []byte,
+		views map[market.Timeframe][]byte,
+		events, nodes map[string][]byte,
+		relations []NodeRelation,
+		scenarios []RankedPayload,
+	) error
+	GetSnapshotV3(ctx context.Context, id string) ([]byte, error)
+	GetViewV3(ctx context.Context, id string, timeframe market.Timeframe) ([]byte, error)
+	FindSnapshotV3(ctx context.Context, requestKey string) (string, []byte, error)
+	ListSnapshotsV3(ctx context.Context, limit int) ([]SnapshotMetadataV3, error)
+	SaveJob(ctx context.Context, id, requestKey, status string, payload []byte, updatedAt int64) error
+	GetJob(ctx context.Context, id string) ([]byte, error)
+	FindJob(ctx context.Context, requestKey string) (string, []byte, error)
+}
+
+type CoverageRange struct {
+	From int64
+	To   int64
+}
+
+type RankedPayload struct {
+	ID      string
+	Rank    int
+	Payload []byte
+}
+
+type NodeRelation struct {
+	ParentID string
+	ChildID  string
+	Position int
+}
+
+//easyjson:json
+type SnapshotMetadataV3 struct {
+	ID               string `json:"id"`
+	ParentSnapshotID string `json:"parent_snapshot_id,omitempty"`
+	RequestKey       string `json:"request_key"`
+	Symbol           string `json:"symbol"`
+	Session          string `json:"session"`
+	AsOf             int64  `json:"as_of"`
+	FocusTimeframe   string `json:"focus_timeframe"`
+	GeneratedAt      int64  `json:"generated_at"`
+	TheoryVersion    string `json:"theory_version"`
+	EngineVersion    string `json:"engine_version"`
+	DataFingerprint  string `json:"data_fingerprint"`
 }
 
 //easyjson:json
@@ -101,6 +157,94 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_analysis_lookup
 			ON analysis_index(symbol, timeframe, session, as_of DESC)`,
+		`CREATE TABLE IF NOT EXISTS native_bars (
+			ticker TEXT NOT NULL,
+			resolution TEXT NOT NULL,
+			timestamp INTEGER NOT NULL,
+			open REAL NOT NULL,
+			high REAL NOT NULL,
+			low REAL NOT NULL,
+			close REAL NOT NULL,
+			volume REAL NOT NULL,
+			PRIMARY KEY (ticker, resolution, timestamp)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_native_bars_range
+			ON native_bars(ticker, resolution, timestamp)`,
+		`CREATE TABLE IF NOT EXISTS native_coverage (
+			ticker TEXT NOT NULL,
+			resolution TEXT NOT NULL,
+			from_timestamp INTEGER NOT NULL,
+			to_timestamp INTEGER NOT NULL,
+			PRIMARY KEY (ticker, resolution, from_timestamp, to_timestamp)
+		)`,
+		`CREATE TABLE IF NOT EXISTS analysis_snapshots_v3 (
+			id TEXT PRIMARY KEY,
+			parent_snapshot_id TEXT,
+			request_key TEXT NOT NULL,
+			data_fingerprint TEXT NOT NULL,
+			symbol TEXT NOT NULL,
+			session TEXT NOT NULL,
+			as_of INTEGER NOT NULL,
+			focus_timeframe TEXT NOT NULL,
+			generated_at INTEGER NOT NULL,
+			theory_version TEXT NOT NULL,
+			engine_version TEXT NOT NULL,
+			payload BLOB NOT NULL,
+			FOREIGN KEY (parent_snapshot_id) REFERENCES analysis_snapshots_v3(id) ON DELETE RESTRICT
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshot_v3_dedup
+			ON analysis_snapshots_v3(request_key, data_fingerprint, theory_version, engine_version)`,
+		`CREATE INDEX IF NOT EXISTS idx_snapshot_v3_history
+			ON analysis_snapshots_v3(generated_at DESC, symbol, session)`,
+		`CREATE TABLE IF NOT EXISTS analysis_views_v3 (
+			snapshot_id TEXT NOT NULL,
+			timeframe TEXT NOT NULL,
+			payload BLOB NOT NULL,
+			PRIMARY KEY (snapshot_id, timeframe),
+			FOREIGN KEY (snapshot_id) REFERENCES analysis_snapshots_v3(id) ON DELETE RESTRICT
+		)`,
+		`CREATE TABLE IF NOT EXISTS canonical_wave_events (
+			snapshot_id TEXT NOT NULL,
+			event_id TEXT NOT NULL,
+			payload BLOB NOT NULL,
+			PRIMARY KEY (snapshot_id, event_id),
+			FOREIGN KEY (snapshot_id) REFERENCES analysis_snapshots_v3(id) ON DELETE RESTRICT
+		)`,
+		`CREATE TABLE IF NOT EXISTS wave_nodes (
+			snapshot_id TEXT NOT NULL,
+			node_id TEXT NOT NULL,
+			payload BLOB NOT NULL,
+			PRIMARY KEY (snapshot_id, node_id),
+			FOREIGN KEY (snapshot_id) REFERENCES analysis_snapshots_v3(id) ON DELETE RESTRICT
+		)`,
+		`CREATE TABLE IF NOT EXISTS wave_node_relations (
+			snapshot_id TEXT NOT NULL,
+			parent_node_id TEXT NOT NULL,
+			child_node_id TEXT NOT NULL,
+			position INTEGER NOT NULL,
+			PRIMARY KEY (snapshot_id, parent_node_id, child_node_id),
+			FOREIGN KEY (snapshot_id, parent_node_id)
+				REFERENCES wave_nodes(snapshot_id, node_id) ON DELETE RESTRICT,
+			FOREIGN KEY (snapshot_id, child_node_id)
+				REFERENCES wave_nodes(snapshot_id, node_id) ON DELETE RESTRICT
+		)`,
+		`CREATE TABLE IF NOT EXISTS master_scenario_assignments (
+			snapshot_id TEXT NOT NULL,
+			scenario_id TEXT NOT NULL,
+			rank INTEGER NOT NULL,
+			payload BLOB NOT NULL,
+			PRIMARY KEY (snapshot_id, scenario_id),
+			FOREIGN KEY (snapshot_id) REFERENCES analysis_snapshots_v3(id) ON DELETE RESTRICT
+		)`,
+		`CREATE TABLE IF NOT EXISTS analysis_jobs_v3 (
+			id TEXT PRIMARY KEY,
+			request_key TEXT NOT NULL,
+			status TEXT NOT NULL,
+			payload BLOB NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_job_v3_lookup
+			ON analysis_jobs_v3(request_key, updated_at DESC)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -118,7 +262,7 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version) VALUES (2)`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version) VALUES (3)`); err != nil {
 		return fmt.Errorf("recording schema migration: %w", err)
 	}
 	return nil

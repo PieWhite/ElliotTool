@@ -17,7 +17,182 @@ var (
 	_ easyjson.Marshaler
 )
 
-func easyjson32ceb8acDecodeWaveSightPkgRepository(in *jlexer.Lexer, out *SnapshotMetadata) {
+func easyjson32ceb8acDecodeWaveSightPkgRepository(in *jlexer.Lexer, out *SnapshotMetadataV3) {
+	isTopLevel := in.IsStart()
+	if in.IsNull() {
+		if isTopLevel {
+			in.Consumed()
+		}
+		in.Skip()
+		return
+	}
+	in.Delim('{')
+	for !in.IsDelim('}') {
+		key := in.UnsafeFieldName(false)
+		in.WantColon()
+		switch key {
+		case "id":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.ID = string(in.String())
+			}
+		case "parent_snapshot_id":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.ParentSnapshotID = string(in.String())
+			}
+		case "request_key":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.RequestKey = string(in.String())
+			}
+		case "symbol":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Symbol = string(in.String())
+			}
+		case "session":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Session = string(in.String())
+			}
+		case "as_of":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.AsOf = int64(in.Int64())
+			}
+		case "focus_timeframe":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.FocusTimeframe = string(in.String())
+			}
+		case "generated_at":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.GeneratedAt = int64(in.Int64())
+			}
+		case "theory_version":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.TheoryVersion = string(in.String())
+			}
+		case "engine_version":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.EngineVersion = string(in.String())
+			}
+		case "data_fingerprint":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.DataFingerprint = string(in.String())
+			}
+		default:
+			in.SkipRecursive()
+		}
+		in.WantComma()
+	}
+	in.Delim('}')
+	if isTopLevel {
+		in.Consumed()
+	}
+}
+func easyjson32ceb8acEncodeWaveSightPkgRepository(out *jwriter.Writer, in SnapshotMetadataV3) {
+	out.RawByte('{')
+	first := true
+	_ = first
+	{
+		const prefix string = ",\"id\":"
+		out.RawString(prefix[1:])
+		out.String(string(in.ID))
+	}
+	if in.ParentSnapshotID != "" {
+		const prefix string = ",\"parent_snapshot_id\":"
+		out.RawString(prefix)
+		out.String(string(in.ParentSnapshotID))
+	}
+	{
+		const prefix string = ",\"request_key\":"
+		out.RawString(prefix)
+		out.String(string(in.RequestKey))
+	}
+	{
+		const prefix string = ",\"symbol\":"
+		out.RawString(prefix)
+		out.String(string(in.Symbol))
+	}
+	{
+		const prefix string = ",\"session\":"
+		out.RawString(prefix)
+		out.String(string(in.Session))
+	}
+	{
+		const prefix string = ",\"as_of\":"
+		out.RawString(prefix)
+		out.Int64(int64(in.AsOf))
+	}
+	{
+		const prefix string = ",\"focus_timeframe\":"
+		out.RawString(prefix)
+		out.String(string(in.FocusTimeframe))
+	}
+	{
+		const prefix string = ",\"generated_at\":"
+		out.RawString(prefix)
+		out.Int64(int64(in.GeneratedAt))
+	}
+	{
+		const prefix string = ",\"theory_version\":"
+		out.RawString(prefix)
+		out.String(string(in.TheoryVersion))
+	}
+	{
+		const prefix string = ",\"engine_version\":"
+		out.RawString(prefix)
+		out.String(string(in.EngineVersion))
+	}
+	{
+		const prefix string = ",\"data_fingerprint\":"
+		out.RawString(prefix)
+		out.String(string(in.DataFingerprint))
+	}
+	out.RawByte('}')
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v SnapshotMetadataV3) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	easyjson32ceb8acEncodeWaveSightPkgRepository(&w, v)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v SnapshotMetadataV3) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjson32ceb8acEncodeWaveSightPkgRepository(w, v)
+}
+
+// UnmarshalJSON supports json.Unmarshaler interface
+func (v *SnapshotMetadataV3) UnmarshalJSON(data []byte) error {
+	r := jlexer.Lexer{Data: data}
+	easyjson32ceb8acDecodeWaveSightPkgRepository(&r, v)
+	return r.Error()
+}
+
+// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
+func (v *SnapshotMetadataV3) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjson32ceb8acDecodeWaveSightPkgRepository(l, v)
+}
+func easyjson32ceb8acDecodeWaveSightPkgRepository1(in *jlexer.Lexer, out *SnapshotMetadata) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -101,7 +276,7 @@ func easyjson32ceb8acDecodeWaveSightPkgRepository(in *jlexer.Lexer, out *Snapsho
 		in.Consumed()
 	}
 }
-func easyjson32ceb8acEncodeWaveSightPkgRepository(out *jwriter.Writer, in SnapshotMetadata) {
+func easyjson32ceb8acEncodeWaveSightPkgRepository1(out *jwriter.Writer, in SnapshotMetadata) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -161,27 +336,27 @@ func easyjson32ceb8acEncodeWaveSightPkgRepository(out *jwriter.Writer, in Snapsh
 // MarshalJSON supports json.Marshaler interface
 func (v SnapshotMetadata) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjson32ceb8acEncodeWaveSightPkgRepository(&w, v)
+	easyjson32ceb8acEncodeWaveSightPkgRepository1(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
 func (v SnapshotMetadata) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjson32ceb8acEncodeWaveSightPkgRepository(w, v)
+	easyjson32ceb8acEncodeWaveSightPkgRepository1(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *SnapshotMetadata) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjson32ceb8acDecodeWaveSightPkgRepository(&r, v)
+	easyjson32ceb8acDecodeWaveSightPkgRepository1(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *SnapshotMetadata) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjson32ceb8acDecodeWaveSightPkgRepository(l, v)
+	easyjson32ceb8acDecodeWaveSightPkgRepository1(l, v)
 }
-func easyjson32ceb8acDecodeWaveSightPkgRepository1(in *jlexer.Lexer, out *SQLiteStore) {
+func easyjson32ceb8acDecodeWaveSightPkgRepository2(in *jlexer.Lexer, out *SQLiteStore) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -205,7 +380,7 @@ func easyjson32ceb8acDecodeWaveSightPkgRepository1(in *jlexer.Lexer, out *SQLite
 		in.Consumed()
 	}
 }
-func easyjson32ceb8acEncodeWaveSightPkgRepository1(out *jwriter.Writer, in SQLiteStore) {
+func easyjson32ceb8acEncodeWaveSightPkgRepository2(out *jwriter.Writer, in SQLiteStore) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -215,23 +390,274 @@ func easyjson32ceb8acEncodeWaveSightPkgRepository1(out *jwriter.Writer, in SQLit
 // MarshalJSON supports json.Marshaler interface
 func (v SQLiteStore) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjson32ceb8acEncodeWaveSightPkgRepository1(&w, v)
+	easyjson32ceb8acEncodeWaveSightPkgRepository2(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
 func (v SQLiteStore) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjson32ceb8acEncodeWaveSightPkgRepository1(w, v)
+	easyjson32ceb8acEncodeWaveSightPkgRepository2(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *SQLiteStore) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjson32ceb8acDecodeWaveSightPkgRepository1(&r, v)
+	easyjson32ceb8acDecodeWaveSightPkgRepository2(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *SQLiteStore) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjson32ceb8acDecodeWaveSightPkgRepository1(l, v)
+	easyjson32ceb8acDecodeWaveSightPkgRepository2(l, v)
+}
+func easyjson32ceb8acDecodeWaveSightPkgRepository3(in *jlexer.Lexer, out *RankedPayload) {
+	isTopLevel := in.IsStart()
+	if in.IsNull() {
+		if isTopLevel {
+			in.Consumed()
+		}
+		in.Skip()
+		return
+	}
+	in.Delim('{')
+	for !in.IsDelim('}') {
+		key := in.UnsafeFieldName(false)
+		in.WantColon()
+		switch key {
+		case "ID":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.ID = string(in.String())
+			}
+		case "Rank":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Rank = int(in.Int())
+			}
+		case "Payload":
+			if in.IsNull() {
+				in.Skip()
+				out.Payload = nil
+			} else {
+				out.Payload = in.Bytes()
+			}
+		default:
+			in.SkipRecursive()
+		}
+		in.WantComma()
+	}
+	in.Delim('}')
+	if isTopLevel {
+		in.Consumed()
+	}
+}
+func easyjson32ceb8acEncodeWaveSightPkgRepository3(out *jwriter.Writer, in RankedPayload) {
+	out.RawByte('{')
+	first := true
+	_ = first
+	{
+		const prefix string = ",\"ID\":"
+		out.RawString(prefix[1:])
+		out.String(string(in.ID))
+	}
+	{
+		const prefix string = ",\"Rank\":"
+		out.RawString(prefix)
+		out.Int(int(in.Rank))
+	}
+	{
+		const prefix string = ",\"Payload\":"
+		out.RawString(prefix)
+		out.Base64Bytes(in.Payload)
+	}
+	out.RawByte('}')
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v RankedPayload) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	easyjson32ceb8acEncodeWaveSightPkgRepository3(&w, v)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v RankedPayload) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjson32ceb8acEncodeWaveSightPkgRepository3(w, v)
+}
+
+// UnmarshalJSON supports json.Unmarshaler interface
+func (v *RankedPayload) UnmarshalJSON(data []byte) error {
+	r := jlexer.Lexer{Data: data}
+	easyjson32ceb8acDecodeWaveSightPkgRepository3(&r, v)
+	return r.Error()
+}
+
+// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
+func (v *RankedPayload) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjson32ceb8acDecodeWaveSightPkgRepository3(l, v)
+}
+func easyjson32ceb8acDecodeWaveSightPkgRepository4(in *jlexer.Lexer, out *NodeRelation) {
+	isTopLevel := in.IsStart()
+	if in.IsNull() {
+		if isTopLevel {
+			in.Consumed()
+		}
+		in.Skip()
+		return
+	}
+	in.Delim('{')
+	for !in.IsDelim('}') {
+		key := in.UnsafeFieldName(false)
+		in.WantColon()
+		switch key {
+		case "ParentID":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.ParentID = string(in.String())
+			}
+		case "ChildID":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.ChildID = string(in.String())
+			}
+		case "Position":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Position = int(in.Int())
+			}
+		default:
+			in.SkipRecursive()
+		}
+		in.WantComma()
+	}
+	in.Delim('}')
+	if isTopLevel {
+		in.Consumed()
+	}
+}
+func easyjson32ceb8acEncodeWaveSightPkgRepository4(out *jwriter.Writer, in NodeRelation) {
+	out.RawByte('{')
+	first := true
+	_ = first
+	{
+		const prefix string = ",\"ParentID\":"
+		out.RawString(prefix[1:])
+		out.String(string(in.ParentID))
+	}
+	{
+		const prefix string = ",\"ChildID\":"
+		out.RawString(prefix)
+		out.String(string(in.ChildID))
+	}
+	{
+		const prefix string = ",\"Position\":"
+		out.RawString(prefix)
+		out.Int(int(in.Position))
+	}
+	out.RawByte('}')
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v NodeRelation) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	easyjson32ceb8acEncodeWaveSightPkgRepository4(&w, v)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v NodeRelation) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjson32ceb8acEncodeWaveSightPkgRepository4(w, v)
+}
+
+// UnmarshalJSON supports json.Unmarshaler interface
+func (v *NodeRelation) UnmarshalJSON(data []byte) error {
+	r := jlexer.Lexer{Data: data}
+	easyjson32ceb8acDecodeWaveSightPkgRepository4(&r, v)
+	return r.Error()
+}
+
+// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
+func (v *NodeRelation) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjson32ceb8acDecodeWaveSightPkgRepository4(l, v)
+}
+func easyjson32ceb8acDecodeWaveSightPkgRepository5(in *jlexer.Lexer, out *CoverageRange) {
+	isTopLevel := in.IsStart()
+	if in.IsNull() {
+		if isTopLevel {
+			in.Consumed()
+		}
+		in.Skip()
+		return
+	}
+	in.Delim('{')
+	for !in.IsDelim('}') {
+		key := in.UnsafeFieldName(false)
+		in.WantColon()
+		switch key {
+		case "From":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.From = int64(in.Int64())
+			}
+		case "To":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.To = int64(in.Int64())
+			}
+		default:
+			in.SkipRecursive()
+		}
+		in.WantComma()
+	}
+	in.Delim('}')
+	if isTopLevel {
+		in.Consumed()
+	}
+}
+func easyjson32ceb8acEncodeWaveSightPkgRepository5(out *jwriter.Writer, in CoverageRange) {
+	out.RawByte('{')
+	first := true
+	_ = first
+	{
+		const prefix string = ",\"From\":"
+		out.RawString(prefix[1:])
+		out.Int64(int64(in.From))
+	}
+	{
+		const prefix string = ",\"To\":"
+		out.RawString(prefix)
+		out.Int64(int64(in.To))
+	}
+	out.RawByte('}')
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v CoverageRange) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	easyjson32ceb8acEncodeWaveSightPkgRepository5(&w, v)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v CoverageRange) MarshalEasyJSON(w *jwriter.Writer) {
+	easyjson32ceb8acEncodeWaveSightPkgRepository5(w, v)
+}
+
+// UnmarshalJSON supports json.Unmarshaler interface
+func (v *CoverageRange) UnmarshalJSON(data []byte) error {
+	r := jlexer.Lexer{Data: data}
+	easyjson32ceb8acDecodeWaveSightPkgRepository5(&r, v)
+	return r.Error()
+}
+
+// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
+func (v *CoverageRange) UnmarshalEasyJSON(l *jlexer.Lexer) {
+	easyjson32ceb8acDecodeWaveSightPkgRepository5(l, v)
 }
